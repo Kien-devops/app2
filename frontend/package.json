@@ -1,0 +1,10 @@
+{
+  "name": "app2-frontend",
+  "version": "1.0.0",
+  "description": "Frontend service for app2 multi-region demo application",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test tests/*.test.js"
+  }
+}

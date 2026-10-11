@@ -1,0 +1,278 @@
+name: app2 CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  detect-changes:
+    name: Detect Changed Components
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      has_changes: ${{ steps.matrix.outputs.has_changes }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify change detection script integrity
+        shell: bash
+        run: bash ci/test_detect_changes.sh
+
+      - name: Collect changed files
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}" > changed-files.txt
+          else
+            BEFORE="${{ github.event.before }}"
+            if [[ -z "$BEFORE" || "$BEFORE" == "0000000000000000000000000000000000000000" ]]; then
+              if git rev-parse HEAD~1 >/dev/null 2>&1; then
+                git diff --name-only HEAD~1 HEAD > changed-files.txt
+              else
+                git ls-files > changed-files.txt
+              fi
+            else
+              git diff --name-only "$BEFORE" "${{ github.sha }}" > changed-files.txt
+            fi
+          fi
+          echo "=== Changed Files ==="
+          cat changed-files.txt
+          echo "======================"
+
+      - name: Build component matrix
+        id: matrix
+        shell: bash
+        run: |
+          COMPONENTS=$(bash ci/detect_changes.sh changed-files.txt)
+          echo "matrix=$COMPONENTS" >> "$GITHUB_OUTPUT"
+          if [[ "$COMPONENTS" == "[]" ]]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No deployable components affected."
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Target matrix: $COMPONENTS"
+          fi
+
+  test-build-push:
+    name: Test, Build & Push
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve component metadata
+        id: meta
+        shell: bash
+        run: |
+          case "${{ matrix.component }}" in
+            frontend)
+              echo "path=frontend" >> "$GITHUB_OUTPUT"
+              echo "repository=app2-frontend" >> "$GITHUB_OUTPUT"
+              ;;
+            backend-1)
+              echo "path=services/backend-1" >> "$GITHUB_OUTPUT"
+              echo "repository=app2-backend-1" >> "$GITHUB_OUTPUT"
+              ;;
+            backend-2)
+              echo "path=services/backend-2" >> "$GITHUB_OUTPUT"
+              echo "repository=app2-backend-2" >> "$GITHUB_OUTPUT"
+              ;;
+            backend-3)
+              echo "path=services/backend-3" >> "$GITHUB_OUTPUT"
+              echo "repository=app2-backend-3" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Test component (${{ matrix.component }})
+        shell: bash
+        run: bash ci/test_component.sh "${{ steps.meta.outputs.path }}"
+
+      - name: Verify Dockerfile exists
+        shell: bash
+        run: |
+          test -f "${{ steps.meta.outputs.path }}/Dockerfile" || {
+            echo "Dockerfile missing: ${{ steps.meta.outputs.path }}/Dockerfile"
+            exit 1
+          }
+
+      - name: Build local container image (Root context with shared code)
+        shell: bash
+        run: |
+          docker build \
+            --pull \
+            -f "${{ steps.meta.outputs.path }}/Dockerfile" \
+            -t "local/${{ steps.meta.outputs.repository }}:${GITHUB_SHA}" \
+            .
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          image-ref: "local/${{ steps.meta.outputs.repository }}:${{ github.sha }}"
+          format: "table"
+          exit-code: "0" # Audit mode during lab phase; change to 1 to enforce blocking policy in production
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          severity: "CRITICAL,HIGH"
+
+      - name: Configure AWS credentials via OIDC
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
+
+      - name: Login to Amazon ECR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push image to Amazon ECR (Primary Region)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPOSITORY: ${{ steps.meta.outputs.repository }}
+        run: |
+          IMAGE="$REGISTRY/$REPOSITORY"
+          echo "==> Pushing immutable SHA tag: $IMAGE:${GITHUB_SHA}"
+          docker tag "local/$REPOSITORY:${GITHUB_SHA}" "$IMAGE:${GITHUB_SHA}"
+          docker push "$IMAGE:${GITHUB_SHA}"
+
+          echo "==> Pushing main branch tag: $IMAGE:main"
+          docker tag "local/$REPOSITORY:${GITHUB_SHA}" "$IMAGE:main"
+          docker push "$IMAGE:main"
+
+          echo "==> Image pushed successfully to ap-southeast-1."
+          echo "==> Cross-region replication will automatically replicate to ap-northeast-1 (Tokyo)."
+
+  gitops-update:
+    name: GitOps Handoff (Single Commit & Push)
+    needs: [detect-changes, test-build-push]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.detect-changes.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout application repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC (for ECR Registry Discovery)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_GITHUB_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
+
+      - name: Resolve ECR Registry
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Update GitOps Repository Manifests
+        shell: bash
+        env:
+          GITOPS_REPO: ${{ vars.GITOPS_REPO || 'Kien-devops/aws-multi-region-dr-platform' }}
+          GITOPS_TOKEN: ${{ secrets.GITOPS_GITHUB_TOKEN }}
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          NEW_TAG: ${{ github.sha }}
+          COMPONENTS_JSON: ${{ needs.detect-changes.outputs.matrix }}
+        run: |
+          if [[ -z "${GITOPS_TOKEN:-}" ]]; then
+            echo "::warning::GITOPS_GITHUB_TOKEN secret is not configured. Skipping GitOps handoff."
+            echo "To enable automated GitOps handoff, add repository secret GITOPS_GITHUB_TOKEN with write access to $GITOPS_REPO."
+            exit 0
+          fi
+
+          echo "==> Initiating single-job GitOps handoff for components: $COMPONENTS_JSON"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Clone infra repository securely
+          git clone "https://x-access-token:${GITOPS_TOKEN}@github.com/${GITOPS_REPO}.git" gitops-repo
+          cd gitops-repo
+
+          # Locate target kustomization base directory
+          TARGET_DIR="gitops/app2/base"
+          if [[ ! -d "$TARGET_DIR" ]]; then
+            FOUND=$(find . -name "kustomization.yaml" | head -n 1 || true)
+            if [[ -n "$FOUND" ]]; then
+              TARGET_DIR=$(dirname "$FOUND")
+            else
+              mkdir -p "$TARGET_DIR"
+            fi
+          fi
+
+          cd "$TARGET_DIR"
+          echo "==> Working in manifest directory: $TARGET_DIR"
+
+          # Parse JSON matrix array and update only affected components
+          node -e "
+            const fs = require('fs');
+            const path = 'kustomization.yaml';
+            const components = JSON.parse(process.env.COMPONENTS_JSON || '[]');
+            const registry = process.env.REGISTRY || '';
+            const newTag = process.env.NEW_TAG;
+
+            if (!fs.existsSync(path)) {
+              console.log('kustomization.yaml not found, creating base manifest...');
+              const images = components.map(c => ({
+                name: registry ? \`\${registry}/app2-\${c}\` : \`app2-\${c}\`,
+                newTag: newTag
+              }));
+              const content = 'apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nimages:\n' +
+                images.map(img => \`  - name: \${img.name}\n    newTag: \${img.newTag}\`).join('\n') + '\n';
+              fs.writeFileSync(path, content, 'utf8');
+              process.exit(0);
+            }
+
+            let content = fs.readFileSync(path, 'utf8');
+            for (const c of components) {
+              const repo = 'app2-' + c;
+              console.log(\`Updating image tag for \${repo} to \${newTag}\`);
+              // Regex matching the specific image block for this repo
+              const pattern = new RegExp('(- name:[^\\\\n]*' + repo + '[^\\\\n]*\\\\n\\\\s*newTag:)\\\\s*[^\\\\n]+', 'g');
+              if (pattern.test(content)) {
+                content = content.replace(pattern, \`\$1 \${newTag}\`);
+              } else {
+                console.log(\`Entry for \${repo} not found in images block, appending...\`);
+                const imgName = registry ? \`\${registry}/\${repo}\` : repo;
+                if (content.includes('images:')) {
+                  content = content.replace('images:', \`images:\\n  - name: \${imgName}\\n    newTag: \${newTag}\`);
+                } else {
+                  content += \`\\nimages:\\n  - name: \${imgName}\\n    newTag: \${newTag}\\n\`;
+                }
+              }
+            }
+            fs.writeFileSync(path, content, 'utf8');
+            console.log('kustomization.yaml updated successfully.');
+          "
+
+          # Single commit and single push
+          git add -A
+          if git diff --staged --quiet; then
+            echo "==> No manifest changes detected; all tags are already up to date."
+          else
+            COMMIT_MSG="ci: bump [$(echo "$COMPONENTS_JSON" | tr -d '[]"')] image tags to ${NEW_TAG} [skip ci]"
+            git commit -m "$COMMIT_MSG"
+            for attempt in 1 2 3 4 5; do
+              if git push origin main; then
+                echo "==> Successfully pushed GitOps tag update (1 commit) to $GITOPS_REPO."
+                break
+              fi
+              echo "==> Push collision detected. Rebasing and retrying (attempt $attempt)..."
+              sleep $((attempt * 2))
+              git pull --rebase origin main
+            done
+          fi

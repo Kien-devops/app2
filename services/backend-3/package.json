@@ -1,0 +1,13 @@
+{
+  "name": "app2-backend-3",
+  "version": "1.0.0",
+  "description": "Backend 3 (Payment & Notification Service) for app2",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "pg": "^8.23.1"
+  }
+}

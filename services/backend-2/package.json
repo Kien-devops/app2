@@ -1,0 +1,10 @@
+{
+  "name": "app2-backend-2",
+  "version": "1.0.0",
+  "description": "Backend 2 (Inventory Management Service) for app2",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test tests/*.test.js"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "app2-shared",
+  "version": "1.0.0",
+  "description": "Shared utilities and contracts for app2 microservices",
+  "main": "src/health.js",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  }
+}
