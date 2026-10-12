@@ -43,7 +43,7 @@ Pipeline được tái cấu trúc thành 3 Job mạch lạc:
           +--------------+-----+     +-----+--------------+
           │                    │     │                    │
           ▼                    ▼     ▼                    ▼
-      [frontend]          [backend-1]   [backend-2]   [backend-3]
+      [frontend] [backend-1] [backend-2] [backend-3] [file-service]
           │                    │             │            │
           +--------------------+-------------+------------+
                                │
@@ -87,7 +87,7 @@ Pipeline tích hợp bộ quét container Trivy (`aquasecurity/trivy-action@0.29
 | Giai đoạn Pipeline | Pull Request (PR) | Push vào `main` |
 |---|:---:|:---:|
 | **Detect Changes** | Có | Có |
-| **Run Unit Tests (23 tests)** | Có | Có |
+| **Run Unit Tests** | Có | Có |
 | **Docker Build** | Có | Có |
 | **Trivy Vulnerability Scan** | Có | Có |
 | **AssumeRole AWS OIDC** | **BỎ QUA** | **THỰC THI** |

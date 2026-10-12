@@ -12,17 +12,19 @@ Nắm vững các nguyên tắc xây dựng Dockerfile tiêu chuẩn sản xuấ
 - `services/backend-1/Dockerfile` & `services/backend-1/.dockerignore`
 - `services/backend-2/Dockerfile` & `services/backend-2/.dockerignore`
 - `services/backend-3/Dockerfile` & `services/backend-3/.dockerignore`
+- `services/file-service/Dockerfile` & `services/file-service/.dockerignore`
 - `.dockerignore` (Bộ lọc toàn cục tại repo root)
 
 ## Step-by-step
 
 ### 1. Tại sao cần Build từ Root Context (`.`)?
-Vì tất cả 4 microservice đều tái sử dụng hợp đồng chuẩn và hàm giải mã vùng từ thư viện `shared/src/health.js`:
+Vì cả 5 deployable components tái sử dụng contract từ `shared/src/health.js`:
 - Nếu build từ thư mục con `services/backend-1/`, Docker daemon sẽ không thể truy cập các tệp nằm ngoài thư mục đó (`../shared`).
 - **Giải pháp chuẩn chuẩn mực (Option A)**:
   Đặt context là gốc Monorepo (`.`) và chỉ định đường dẫn Dockerfile qua cờ `-f`:
   ```bash
   docker build -f services/backend-3/Dockerfile -t local/app2-backend-3:test .
+  docker build -f services/file-service/Dockerfile -t local/app2-file-service:test .
   ```
   Dockerfile copy cả `shared/` và `services/backend-3/`, giúp cấu trúc relative path `../../../shared/src/health` hoạt động đồng nhất 100% cả ở máy phát triển lẫn bên trong container.
 
@@ -40,23 +42,26 @@ Khác với các microservice tĩnh, `backend-3` sử dụng thư viện kết n
 | **backend-1** | `8081` | `CMD wget -qO- http://127.0.0.1:8081/health \|\| exit 1` |
 | **backend-2** | `8082` | `CMD wget -qO- http://127.0.0.1:8082/health \|\| exit 1` |
 | **backend-3** | `8083` | `CMD wget -qO- http://127.0.0.1:8083/health \|\| exit 1` |
+| **file-service** | `8084` | `CMD wget -qO- http://127.0.0.1:8084/health \|\| exit 1` |
 
 ---
 
 ## Commands
 
 ```bash
-# 1. Đóng gói cả 4 container images từ repository root
+# 1. Đóng gói cả 5 container images từ repository root
 docker build -f frontend/Dockerfile -t local/app2-frontend:test .
 docker build -f services/backend-1/Dockerfile -t local/app2-backend-1:test .
 docker build -f services/backend-2/Dockerfile -t local/app2-backend-2:test .
 docker build -f services/backend-3/Dockerfile -t local/app2-backend-3:test .
+docker build -f services/file-service/Dockerfile -t local/app2-file-service:test .
 
-# 2. Khởi chạy đồng thời cả 4 container
+# 2. Khởi chạy các container cần kiểm tra
 docker run -d --name c-fe -p 3000:3000 -e AWS_REGION=ap-southeast-1 local/app2-frontend:test
 docker run -d --name c-b1 -p 8081:8081 -e AWS_REGION=ap-southeast-1 local/app2-backend-1:test
 docker run -d --name c-b2 -p 8082:8082 -e AWS_REGION=ap-southeast-1 local/app2-backend-2:test
 docker run -d --name c-b3 -p 8083:8083 -e AWS_REGION=ap-southeast-1 local/app2-backend-3:test
+docker run -d --name c-files -p 8084:8084 -e AWS_REGION=ap-southeast-1 -e STORAGE_PATH=/mnt/dr-data -v /mnt/dr-data:/mnt/dr-data local/app2-file-service:test
 
 # 3. Kiểm tra health endpoints của từng container
 curl -s http://localhost:3000/health

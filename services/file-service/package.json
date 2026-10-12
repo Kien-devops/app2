@@ -1,0 +1,13 @@
+{
+  "name": "app2-file-service",
+  "version": "1.0.0",
+  "description": "Filesystem DR service backed by FSx for NetApp ONTAP",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "busboy": "^1.6.0"
+  }
+}

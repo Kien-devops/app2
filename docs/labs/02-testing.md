@@ -14,6 +14,7 @@ Hiểu và áp dụng Testing Contract thống nhất cho toàn bộ Monorepo. N
 - `services/backend-1/ci/test.sh` & `services/backend-1/tests/backend-1.test.js` (3 tests)
 - `services/backend-2/ci/test.sh` & `services/backend-2/tests/backend-2.test.js` (4 tests)
 - `services/backend-3/ci/test.sh` & `services/backend-3/tests/backend-3.test.js` (9 tests)
+- `services/file-service/ci/test.sh` & `services/file-service/tests/file-service.test.js`
 - `shared/ci/test.sh` & `shared/tests/health.test.js` (4 tests)
 
 ## Step-by-step
@@ -36,17 +37,22 @@ Một nguyên tắc cốt lõi của CI/CD hiện đại: **Unit tests trong CI 
   - Hỗ trợ ghi chuỗi `marker` phục vụ đo RPO (`SEQ-000001`, `SEQ-000002`).
   - Xử lý lỗi kết nối DB: khi DB bị ngắt, service trả về HTTP 503 mà không crash process.
 
+### 3. Temporary Filesystem trong File-service
+
+Test tạo thư mục tạm cho mỗi fixture và HTTP server trên port ngẫu nhiên. Bộ test kiểm tra upload/list/download/delete, checksum PASS/FAIL, invalid ID, unavailable/read-only readiness, storage event và upload limit mà không cần AWS hoặc NFS.
+
 ---
 
 ## Commands
 Thực thi kiểm thử cho từng component và kiểm tra bộ lọc:
 
 ```bash
-# 1. Chạy test toàn bộ 23 unit tests
+# 1. Chạy toàn bộ unit tests
 bash ci/test_component.sh frontend
 bash ci/test_component.sh services/backend-1
 bash ci/test_component.sh services/backend-2
 bash ci/test_component.sh services/backend-3
+bash ci/test_component.sh services/file-service
 bash ci/test_component.sh shared
 
 # 2. Chạy test suite kiểm tra bộ lọc thay đổi
@@ -80,11 +86,13 @@ bash ci/test_detect_changes.sh
   [PASS] Frontend change => ["frontend"]
   [PASS] Backend-1 change => ["backend-1"]
   [PASS] Backend-3 change => ["backend-3"]
-  [PASS] Shared change triggers all 4 => ["frontend","backend-1","backend-2","backend-3"]
+  [PASS] File-service change => ["file-service"]
+  [PASS] Shared change triggers all 5 => ["frontend","backend-1","backend-2","backend-3","file-service"]
   [PASS] Docs change skips all => []
   [PASS] Root README change skips all => []
   [PASS] Docs + README change skips all => []
   [PASS] Multiple services (frontend + backend-3) => ["frontend","backend-3"]
+  [PASS] Multiple services (frontend + file-service) => ["frontend","file-service"]
 ==> Change detection test results: 9 passed, 0 failed.
 ```
 

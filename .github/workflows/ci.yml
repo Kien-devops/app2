@@ -17,6 +17,8 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
       has_changes: ${{ steps.matrix.outputs.has_changes }}
+      has_gitops_changes: ${{ steps.matrix.outputs.has_gitops_changes }}
+      gitops_matrix: ${{ steps.matrix.outputs.gitops_matrix }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -54,11 +56,19 @@ jobs:
         run: |
           COMPONENTS=$(bash ci/detect_changes.sh changed-files.txt)
           echo "matrix=$COMPONENTS" >> "$GITHUB_OUTPUT"
+          K8S_COMPONENTS=$(COMPONENTS_JSON="$COMPONENTS" node -e "const c=JSON.parse(process.env.COMPONENTS_JSON).filter(x=>x!=='file-service'); process.stdout.write(JSON.stringify(c))")
+          echo "gitops_matrix=$K8S_COMPONENTS" >> "$GITHUB_OUTPUT"
           if [[ "$COMPONENTS" == "[]" ]]; then
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "has_gitops_changes=false" >> "$GITHUB_OUTPUT"
             echo "No deployable components affected."
           else
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            if [[ "$K8S_COMPONENTS" == "[]" ]]; then
+              echo "has_gitops_changes=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "has_gitops_changes=true" >> "$GITHUB_OUTPUT"
+            fi
             echo "Target matrix: $COMPONENTS"
           fi
 
@@ -96,6 +106,14 @@ jobs:
             backend-3)
               echo "path=services/backend-3" >> "$GITHUB_OUTPUT"
               echo "repository=app2-backend-3" >> "$GITHUB_OUTPUT"
+              ;;
+            file-service)
+              echo "path=services/file-service" >> "$GITHUB_OUTPUT"
+              echo "repository=app2-file-service" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unsupported component: ${{ matrix.component }}" >&2
+              exit 1
               ;;
           esac
 
@@ -164,8 +182,11 @@ jobs:
   gitops-update:
     name: GitOps Handoff (Single Commit & Push)
     needs: [detect-changes, test-build-push]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.detect-changes.outputs.has_changes == 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.detect-changes.outputs.has_gitops_changes == 'true'
     runs-on: ubuntu-latest
+    concurrency:
+      group: app2-gitops-handoff
+      cancel-in-progress: false
     steps:
       - name: Checkout application repository
         uses: actions/checkout@v4
@@ -187,7 +208,7 @@ jobs:
           GITOPS_TOKEN: ${{ secrets.GITOPS_GITHUB_TOKEN }}
           REGISTRY: ${{ steps.ecr.outputs.registry }}
           NEW_TAG: ${{ github.sha }}
-          COMPONENTS_JSON: ${{ needs.detect-changes.outputs.matrix }}
+          COMPONENTS_JSON: ${{ needs.detect-changes.outputs.gitops_matrix }}
         run: |
           if [[ -z "${GITOPS_TOKEN:-}" ]]; then
             echo "::warning::GITOPS_GITHUB_TOKEN secret is not configured. Skipping GitOps handoff."
@@ -266,13 +287,19 @@ jobs:
           else
             COMMIT_MSG="ci: bump [$(echo "$COMPONENTS_JSON" | tr -d '[]"')] image tags to ${NEW_TAG} [skip ci]"
             git commit -m "$COMMIT_MSG"
+            pushed=false
             for attempt in 1 2 3 4 5; do
               if git push origin main; then
                 echo "==> Successfully pushed GitOps tag update (1 commit) to $GITOPS_REPO."
+                pushed=true
                 break
               fi
               echo "==> Push collision detected. Rebasing and retrying (attempt $attempt)..."
               sleep $((attempt * 2))
               git pull --rebase origin main
             done
+            if [[ "$pushed" != true ]]; then
+              echo "::error::GitOps handoff failed after 5 push attempts."
+              exit 1
+            fi
           fi

@@ -58,16 +58,16 @@ bash ci/detect_changes.sh /tmp/files_scenario_b.txt
 - **Hành động**: Cập nhật hợp đồng kiểm tra sức khỏe trong `shared/src/health.js`.
 - **Kỳ vọng (Expected Behavior)**:
   - Job `detect-changes` nhận diện cờ `all=true`.
-  - JSON Matrix: `["frontend","backend-1","backend-2","backend-3"]`.
-  - Toàn bộ 4 job con chạy song song đồng thời.
-  - Đúng **4 images mới** được push lên cả 4 kho ECR tương ứng với cùng một `<SHA>`.
+  - JSON Matrix: `["frontend","backend-1","backend-2","backend-3","file-service"]`.
+  - Toàn bộ 5 job con chạy song song đồng thời.
+  - Đúng **5 images mới** được push lên 5 kho ECR với cùng một `<SHA>`.
   - **ĐIỂM ĐẶC BIỆT**: Job `gitops-update` duy nhất chạy ở cuối, gom toàn bộ 4 cập nhật vào **DUY NHẤT 1 COMMIT & 1 PUSH** sang repo `aws-multi-region-dr-platform`, hoàn toàn không có race condition.
 
 ```bash
 # Thao tác mô phỏng cục bộ:
 echo 'shared/src/health.js' > /tmp/files_scenario_c.txt
 bash ci/detect_changes.sh /tmp/files_scenario_c.txt
-# Output: ["frontend","backend-1","backend-2","backend-3"]
+# Output: ["frontend","backend-1","backend-2","backend-3","file-service"]
 ```
 
 ---
@@ -122,7 +122,7 @@ Trong bài kiểm tra thảm họa DR trên hạ tầng:
 |---|---|---|---|
 | **1. No workflow triggered** | Không thấy lần chạy nào xuất hiện trong tab GitHub Actions | Tên nhánh không phải `main`, hoặc file YAML đặt sai đường dẫn | Kiểm tra file nằm đúng tại `.github/workflows/ci.yml`. Đảm bảo push vào nhánh `main` hoặc tạo PR target vào `main`. |
 | **2. Wrong path filter** | Thay đổi tài liệu nhưng pipeline vẫn chạy build container | File nằm lẫn trong thư mục ứng dụng hoặc script detect diff sai | Kiểm tra `changed-files.txt` trong log job `detect-changes`. Đảm bảo các file tài liệu nằm trong `docs/**` hoặc `README.md`. |
-| **3. Matrix empty** | Job build bị bỏ qua khi sửa file ứng dụng | Script `ci/detect_changes.sh` không match được case nhánh | Chạy `bash ci/test_detect_changes.sh` để kiểm tra toàn bộ 9 kịch bản path filter. |
+| **3. Matrix empty** | Job build bị bỏ qua khi sửa file ứng dụng | Script `ci/detect_changes.sh` không match được case nhánh | Chạy `bash ci/test_detect_changes.sh` để kiểm tra path filter và GitOps filtering. |
 | **4. Dockerfile not found** | `Dockerfile missing: <path>/Dockerfile` | File Dockerfile bị viết thường (`dockerfile`) hoặc đặt sai chỗ | Đảm bảo file được đặt tên chính xác là `Dockerfile` (viết hoa chữ D) ngay tại gốc thư mục của từng component. |
 | **5. Tests fail** | `AssertionError` hoặc exit code khác 0 ở step test | Logic mã nguồn vi phạm test contract | Đọc chi tiết stack trace trong step `Test component`. Chạy test cục bộ bằng `bash ci/test_component.sh <path>` để debug trước khi push. |
 | **6. ECR login fail** | `Error: Cannot perform docker login to ECR` | Thiếu quyền `ecr:GetAuthorizationToken` hoặc credentials OIDC không hợp lệ | Đảm bảo IAM Role có policy cho phép `ecr:GetAuthorizationToken` trên `Resource: "*"`. |
@@ -131,8 +131,9 @@ Trong bài kiểm tra thảm họa DR trên hạ tầng:
 | **9. Repository does not exist** | `RepositoryNotFoundException: The repository with name 'app2-backend-1' does not exist` | ECR repository chưa được tạo trước tại `ap-southeast-1` | Khởi tạo repository trên AWS Console hoặc qua Terraform: `aws ecr create-repository --repository-name app2-backend-1 --region ap-southeast-1`. |
 | **10. Image push denied** | `AccessDeniedException: User: ... is not authorized to perform: ecr:PutImage` | IAM Policy giới hạn sai resource ARN | Đảm bảo Resource trong IAM Policy có định dạng `arn:aws:ecr:ap-southeast-1:<ACCOUNT_ID>:repository/app2-*`. |
 | **11. Trivy scan fail** | Trivy phát hiện lỗ hổng và trả về exit code 1 | Base image có lỗ hổng Critical chưa được vá | Xem bảng báo cáo Trivy. Nâng cấp base image lên phiên bản alpine mới nhất (`node:22-alpine`). Trong lab demo, `exit-code: 0` được dùng để kiểm tra mà không làm gãy pipeline. |
-| **12. ECR replication chưa xuất hiện Tokyo** | Image có ở Singapore nhưng không thấy ở Tokyo sau vài phút | Bộ lọc Replication Rule đặt sai tiền tố | Kiểm tra cấu hình Replication trên ECR Singapore: filter prefix phải là `app2-` để áp dụng cho cả 4 repository. |
+| **12. ECR replication chưa xuất hiện Tokyo** | Image có ở Singapore nhưng không thấy ở Tokyo sau vài phút | Bộ lọc Replication Rule đặt sai tiền tố | Kiểm tra Replication Rule: prefix `app2-` phải áp dụng cho cả 5 repository. |
 | **13. GitOps Hand-off Push Conflict** | `non-fast-forward push rejection` | Nhiều job cùng push GitOps repo cùng lúc | Đã được giải quyết triệt để nhờ chuyển sang single `gitops-update` job chạy một lần duy nhất sau khi matrix hoàn tất. |
+| **14. File-service xuất hiện trong EKS manifest** | Kustomize có `app2-file-service` | Handoff không lọc workload EC2 | CI phải loại `file-service` trước khi sửa `gitops/app2/base`; chỉ ECR image được tạo. |
 
 ---
 
@@ -140,26 +141,28 @@ Trong bài kiểm tra thảm họa DR trên hạ tầng:
 Cách kiểm tra và chẩn đoán toàn bộ trạng thái hệ thống:
 
 ```bash
-# 1. Chạy toàn bộ test suite cục bộ của Monorepo (23 tests)
+# 1. Chạy toàn bộ test suite cục bộ của Monorepo
 bash ci/test_component.sh frontend
 bash ci/test_component.sh services/backend-1
 bash ci/test_component.sh services/backend-2
 bash ci/test_component.sh services/backend-3
+bash ci/test_component.sh services/file-service
 bash ci/test_component.sh shared
 bash ci/test_detect_changes.sh
 
-# 2. Đóng gói cả 4 container từ root context
+# 2. Đóng gói cả 5 container từ root context
 docker build -f frontend/Dockerfile -t local/app2-frontend:test .
 docker build -f services/backend-1/Dockerfile -t local/app2-backend-1:test .
 docker build -f services/backend-2/Dockerfile -t local/app2-backend-2:test .
 docker build -f services/backend-3/Dockerfile -t local/app2-backend-3:test .
+docker build -f services/file-service/Dockerfile -t local/app2-file-service:test .
 ```
 
 ## Expected output
 Tất cả các lệnh kiểm tra cục bộ hoàn thành với exit code 0:
-- Toàn bộ test suite vượt qua (23/23 tests pass).
-- Bộ kiểm thử phát hiện thay đổi vượt qua (9/9 scenarios pass).
-- Cả 4 container build thành công và chạy ổn định.
+- Toàn bộ test suite vượt qua.
+- Bộ kiểm thử change detection/GitOps filtering vượt qua (13/13 scenarios pass).
+- Cả 5 container build thành công và chạy ổn định.
 
 ## Verification
 - Xác nhận sau khi hoàn thành quy trình, hệ thống CI vận hành hoàn toàn tự động, tin cậy, và bảo vệ chặt chẽ hạ tầng đám mây.

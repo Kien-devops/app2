@@ -3,7 +3,7 @@
 [![CI/CD Pipeline](https://github.com/Kien-devops/app2/actions/workflows/ci.yml/badge.svg)](https://github.com/Kien-devops/app2/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Repository mã nguồn ứng dụng mẫu (1 Frontend + 3 Microservices Backend + Thư viện Shared) kết nối cơ sở dữ liệu **Amazon Aurora PostgreSQL Global Database**, phục vụ trực tiếp cho kịch bản đo đạc **RPO/RTO** và thử nghiệm **Disaster Recovery (DR)** của dự án **[aws-multi-region-dr-platform](https://github.com/Kien-devops/aws-multi-region-dr-platform)**.
+Repository mã nguồn ứng dụng mẫu gồm frontend, 3 backend trên EKS và `file-service` trên EC2. Hai state path độc lập phục vụ đo RPO/RTO: **Amazon Aurora PostgreSQL Global Database** cho transaction và **Amazon FSx for NetApp ONTAP + SnapMirror** cho file.
 
 ---
 
@@ -13,10 +13,12 @@ Hệ thống tuân thủ nguyên tắc phân định trách nhiệm rõ ràng (*
 
 | Repository | Trách Nhiệm Chính | Nội Dung |
 |---|---|---|
-| **[Kien-devops/app2](https://github.com/Kien-devops/app2)** *(Repo này)* | **Application Source Code & CI** | • Mã nguồn ứng dụng (Frontend + 3 Backends + Shared)<br>• Unit Testing & Contract validation<br>• Docker multi-stage builds (context root)<br>• Trivy security scanning<br>• Push container images lên Amazon ECR Singapore (`ap-southeast-1`)<br>• Job GitOps handoff tự động cập nhật image tag |
-| **[Kien-devops/aws-multi-region-dr-platform](https://github.com/Kien-devops/aws-multi-region-dr-platform)** | **Infrastructure, GitOps & Multi-Region DR** | • Terraform/OpenTofu cấu hình hạ tầng AWS đa vùng (VPC, EKS, ECR, Route 53, Aurora Global DB)<br>• Argo CD GitOps manifests & Helm charts<br>• Quản lý quy trình Failover / Switchover giữa Singapore (`ap-southeast-1`) và Tokyo (`ap-northeast-1`) |
+| **[Kien-devops/app2](https://github.com/Kien-devops/app2)** *(Repo này)* | **Application Source Code & CI** | • Frontend + 3 EKS backends + EC2 file-service + Shared<br>• Unit testing, Docker build, Trivy<br>• Push container images lên Amazon ECR Singapore (`ap-southeast-1`)<br>• GitOps handoff chỉ cập nhật workload EKS |
+| **[Kien-devops/aws-multi-region-dr-platform](https://github.com/Kien-devops/aws-multi-region-dr-platform)** | **Infrastructure, GitOps & Multi-Region DR** | • Console-first AWS labs cho VPC, EKS, Aurora Global DB, FSx ONTAP và routing<br>• Argo CD GitOps manifests cho workload EKS<br>• Runbook failover/switchover giữa Singapore và Tokyo |
 
 > **Nguyên tắc cốt lõi**: CI của `app2` **tuyệt đối không bao giờ** chứa cluster credentials hoặc thực hiện lệnh `kubectl apply` trực tiếp. Việc triển khai lên Kubernetes hoàn toàn do Argo CD trong repo `aws-multi-region-dr-platform` đảm nhiệm thông qua cơ chế Pull-based GitOps.
+
+`file-service` không chạy trên EKS. CI chỉ tạo image `app2-file-service:<SHA>`; EC2 tải image bằng IAM role theo lab/runbook của repo hạ tầng.
 
 ---
 
@@ -41,6 +43,20 @@ Hệ thống tuân thủ nguyên tắc phân định trách nhiệm rõ ràng (*
                                                                                    └─────────────────────────┘
 ```
 
+```text
+Transaction DR                         File Storage DR
+
+backend-3                              file-service
+    |                                       |
+Aurora Global Database                 EC2 Linux
+                                            |
+                                      NFS 4.1 mount
+                                            |
+                                      FSx ONTAP
+                                            |
+                                      SnapMirror
+```
+
 ### Bảng Phân Bổ Endpoints & Chức Năng
 
 | Service | Port | Endpoint | Phương Thức | Mô Tả Nghiệp Vụ | Phản Hồi Mẫu |
@@ -49,6 +65,16 @@ Hệ thống tuân thủ nguyên tắc phân định trách nhiệm rõ ràng (*
 | **backend-1** | `8081` | `/health`<br>`/api/v1/info` | GET<br>GET | Dịch vụ Authentication & Metadata | `{"service":"backend-1","role":"Authentication & Demo Service"}` |
 | **backend-2** | `8082` | `/health`<br>`/api/v1/catalog`<br>`/api/v1/info` | GET<br>GET<br>GET | Dịch vụ đọc danh mục sản phẩm (Catalog) | `[{"id":"item-001","name":"Cloud Server Instance","price":49.99}]` |
 | **backend-3** | `8083` | `/health`<br>`/api/v1/info`<br>`/api/v1/orders`<br>`/api/v1/orders` | GET<br>GET<br>GET<br>POST | Dịch vụ quản lý đơn hàng kết nối PostgreSQL | GET: Danh sách đơn hàng gần nhất (hỗ trợ `?marker=...`)<br>POST (201): Tạo đơn hàng & ghi chuỗi sequence |
+| **file-service** | `8084` | `/health`, `/ready`, `/api/v1/files`, `/api/v1/storage/events` | GET/POST/DELETE | File workload trên EC2 + FSx ONTAP | Metadata JSON và SHA-256 nằm cùng filesystem, không lưu Aurora |
+
+### File Storage API
+
+- `STORAGE_PATH`: production `/mnt/dr-data`; local mặc định dùng thư mục tạm.
+- `MAX_UPLOAD_BYTES`: giới hạn upload, mặc định 10 MiB.
+- `CORS_ALLOWED_ORIGINS`: allow-list origin frontend khi dùng ALB riêng.
+- `/ready` kiểm tra storage thật bằng read/write probe; destination SnapMirror read-only trả `503` và `filesystem_read_only`.
+- `/api/v1/files/:id/verify` đọc lại file, tính SHA-256, trả `PASS` hoặc `FAIL`.
+- Storage event được ghi thành `events/<sequence>.json` để đo RPO filesystem độc lập với Aurora.
 
 ---
 
@@ -117,7 +143,7 @@ git push / pull request
 [Job 1: detect-changes]
   - Kiểm tra tính toàn vẹn của bộ lọc (bash ci/test_detect_changes.sh)
   - Phân tích git diff (bash ci/detect_changes.sh changed-files.txt)
-  - Sinh ma trận động (Ví dụ: ["backend-2"] hoặc ["frontend","backend-1","backend-2","backend-3"])
+  - Sinh ma trận động (Ví dụ: ["file-service"] hoặc toàn bộ 5 deployable components)
          │
          ▼
 [Job 2: test-build-push (Chạy song song)]
@@ -132,11 +158,12 @@ git push / pull request
   - Clone repo aws-multi-region-dr-platform
   - Cập nhật đúng các component bị ảnh hưởng trong kustomization.yaml
   - Tạo duy nhất 1 commit và 1 push sang nhánh main!
+  - Lọc `file-service`; image này được triển khai trên EC2, không thêm vào EKS Kustomize
 ```
 
 ---
 
-## 6. Danh Mục 11 Bài Thực Hành (Labs)
+## 6. Danh Mục 12 Bài Thực Hành (Labs)
 
 Toàn bộ hướng dẫn từng bước từ phát triển cục bộ, kết nối Aurora, đến CI/CD và GitOps:
 
@@ -151,23 +178,26 @@ Toàn bộ hướng dẫn từng bước từ phát triển cục bộ, kết n�
 9. [LAB 08 - Sao Chép Image Đa Vùng (ECR Cross-Region Replication)](docs/labs/08-ecr-multi-region.md)
 10. [LAB 09 - Bàn Giao Triển Khai Cho GitOps (GitOps Handoff)](docs/labs/09-gitops-handoff.md)
 11. [LAB 10 - Kiểm Chứng Toàn Diện CI/CD & Khắc Phục Sự Cố](docs/labs/10-cicd-validation.md)
+12. [LAB 11 - File Service và Filesystem DR Contract](docs/labs/11-file-storage-service.md)
 
 ---
 
 ## 7. Khởi Chạy Nhanh Cục Bộ (Quick Start)
 
 ```bash
-# 1. Chạy toàn bộ unit tests (23 tests)
+# 1. Chạy toàn bộ unit tests
 bash ci/test_component.sh frontend
 bash ci/test_component.sh services/backend-1
 bash ci/test_component.sh services/backend-2
 bash ci/test_component.sh services/backend-3
+bash ci/test_component.sh services/file-service
 bash ci/test_component.sh shared
 bash ci/test_detect_changes.sh
 
-# 2. Đóng gói 4 Docker images
+# 2. Đóng gói 5 Docker images
 docker build -f frontend/Dockerfile -t local/app2-frontend:test .
 docker build -f services/backend-1/Dockerfile -t local/app2-backend-1:test .
 docker build -f services/backend-2/Dockerfile -t local/app2-backend-2:test .
 docker build -f services/backend-3/Dockerfile -t local/app2-backend-3:test .
+docker build -f services/file-service/Dockerfile -t local/app2-file-service:test .
 ```

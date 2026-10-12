@@ -1,7 +1,7 @@
 # LAB 01 - Chạy và Phát Triển Ứng Dụng Local
 
 ## Goal
-Hướng dẫn lập trình viên khởi chạy từng microservice cục bộ trên máy tính cá nhân, kiểm tra giao diện frontend, gọi các endpoint nghiệp vụ `/api/v1/catalog`, `/api/v1/orders`, và hiểu cách cấu hình biến môi trường vùng (`AWS_REGION`) cũng như kết nối PostgreSQL cho `backend-3`.
+Khởi chạy các service, gồm transaction workload `backend-3` và filesystem workload `file-service`.
 
 ## Prerequisites
 - Node.js version 18 trở lên (kiểm tra bằng `node -v`).
@@ -12,6 +12,7 @@ Hướng dẫn lập trình viên khởi chạy từng microservice cục bộ t
 - `services/backend-1/src/server.js` (Port: 8081)
 - `services/backend-2/src/server.js` (Port: 8082)
 - `services/backend-3/src/server.js` (Port: 8083) & `services/backend-3/src/db.js`
+- `services/file-service/src/server.js` (Port: 8084) & `services/file-service/src/storage.js`
 
 ## Step-by-step
 
@@ -19,10 +20,11 @@ Hướng dẫn lập trình viên khởi chạy từng microservice cục bộ t
 
 | Component | Port | Endpoints Hỗ Trợ | Vai Trò Chính |
 |---|:---:|---|---|
-| **frontend** | `3000` | `GET /`<br>`GET /health` | Giao diện Dashboard & Điều hướng người dùng |
+| **frontend** | `3000` | `GET /`<br>`GET /files`<br>`GET /health` | Dashboard và File Storage UI |
 | **backend-1** | `8081` | `GET /health`<br>`GET /api/v1/info` | Authentication & Metadata Service |
 | **backend-2** | `8082` | `GET /health`<br>`GET /api/v1/catalog`<br>`GET /api/v1/info` | Catalog & Inventory Read Service |
 | **backend-3** | `8083` | `GET /health`<br>`GET /api/v1/info`<br>`GET /api/v1/orders`<br>`POST /api/v1/orders` | Orders Processing Service (Kết nối Aurora PostgreSQL) |
+| **file-service** | `8084` | `GET /health`<br>`GET /ready`<br>`GET/POST/DELETE /api/v1/files`<br>`GET/POST /api/v1/storage/events` | Filesystem workload cho FSx ONTAP |
 
 ---
 
@@ -62,8 +64,20 @@ node src/server.js
 #### Khởi chạy Frontend:
 ```bash
 cd frontend
+export FILE_SERVICE_BASE_URL="http://localhost:8084"
 node src/server.js
 # Output: [frontend] Server listening on http://0.0.0.0:3000
+```
+
+#### Khởi chạy File-service:
+
+```bash
+cd services/file-service
+npm ci
+export AWS_REGION="ap-southeast-1"
+export STORAGE_PATH="/tmp/app2-dr-data"
+node src/server.js
+# Output: [file-service] Service listening on http://0.0.0.0:8084
 ```
 
 ---
@@ -114,6 +128,11 @@ curl -X POST http://localhost:8083/api/v1/orders \
 
 # 6. Đọc danh sách đơn hàng theo marker
 curl -s "http://localhost:8083/api/v1/orders?marker=RPO_TEST_001"
+
+# 7. File-service
+curl -s http://localhost:8084/ready
+curl -s -X POST http://localhost:8084/api/v1/files -F "file=@./sample.txt"
+curl -s http://localhost:8084/api/v1/files
 ```
 
 ## Expected output
@@ -150,7 +169,7 @@ curl -s "http://localhost:8083/api/v1/orders?marker=RPO_TEST_001"
 ```
 
 ## Verification
-- Xác nhận tất cả port dịch vụ khớp với hợp đồng (3000, 8081, 8082, 8083).
+- Xác nhận tất cả port dịch vụ khớp với hợp đồng (3000, 8081, 8082, 8083, 8084).
 - Xác nhận `/health` luôn trả HTTP 200 kèm `region` chính xác.
 
 ## Troubleshooting
@@ -163,4 +182,4 @@ curl -s "http://localhost:8083/api/v1/orders?marker=RPO_TEST_001"
 - Mật khẩu cơ sở dữ liệu `DB_PASSWORD` phải luôn được nạp thông qua biến môi trường hoặc AWS Secrets Manager, tuyệt đối không hardcode trong mã nguồn.
 
 ## Next step
-Chuyển sang [LAB 02 - Chiến Lược Kiểm Thử (Testing Contract)](02-testing.md) để tìm hiểu bộ unit tests 23 kịch bản của Monorepo.
+Chuyển sang [LAB 02 - Chiến Lược Kiểm Thử (Testing Contract)](02-testing.md).

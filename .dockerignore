@@ -1,6 +1,7 @@
 .git
 .github
 docs
+**/node_modules
 **/tests
 **/ci
 **/*.md

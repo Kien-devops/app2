@@ -9,7 +9,7 @@ Hiểu sâu sắc cơ chế phát hiện thay đổi đường dẫn (Path-based
 
 ## Files involved
 - `ci/detect_changes.sh` (Shell script cốt lõi phát hiện thay đổi)
-- `ci/test_detect_changes.sh` (Bộ unit tests kiểm tra 9 kịch bản)
+- `ci/test_detect_changes.sh` (Path detection và GitOps filtering tests)
 - `.github/workflows/ci.yml` (Job `detect-changes`)
 
 ## Step-by-step
@@ -22,10 +22,10 @@ Hiểu sâu sắc cơ chế phát hiện thay đổi đường dẫn (Path-based
 
 1. **Thay đổi trong `frontend/**`**:
    Chỉ `frontend` được test, build và push. Toàn bộ backend được bỏ qua.
-2. **Thay đổi trong `services/<backend-name>/**`**:
+2. **Thay đổi trong `services/<service-name>/**`**:
    Chỉ đúng service đó được đưa vào ma trận. Các service khác được bỏ qua.
 3. **Thay đổi trong `shared/**`**:
-   Vì `shared` là thư viện nền tảng cung cấp interface và helper cho các microservice, bất kỳ thay đổi nào trong `shared/**` sẽ tự động đánh dấu toàn bộ 4 components (`frontend`, `backend-1`, `backend-2`, `backend-3`) cần phải chạy test và build lại.
+   Vì `shared` là thư viện nền tảng, thay đổi `shared/**` đánh dấu cả 5 components, gồm `file-service`.
 4. **Thay đổi trong `docs/**`, `README.md`, hoặc các file không liên quan**:
    Script trả về danh sách rỗng `[]`. CI kết thúc sớm và không build bất kỳ Docker image nào.
 
@@ -37,7 +37,8 @@ Hiểu sâu sắc cơ chế phát hiện thay đổi đường dẫn (Path-based
 | **2** | `services/backend-2/src/app.js` | SKIP | SKIP | **RUN** | SKIP | `["backend-2"]` | Test & build duy nhất backend-2 |
 | **3** | `services/backend-1/src/app.js` | SKIP | **RUN** | SKIP | SKIP | `["backend-1"]` | Test & build duy nhất backend-1 |
 | **4** | `services/backend-3/src/db.js` | SKIP | SKIP | SKIP | **RUN** | `["backend-3"]` | Test & build duy nhất backend-3 |
-| **5** | `shared/src/health.js` | **RUN** | **RUN** | **RUN** | **RUN** | `["frontend","backend-1","backend-2","backend-3"]` | Test & build toàn bộ 4 components |
+| **5** | `services/file-service/src/storage.js` | SKIP | SKIP | SKIP | SKIP | `["file-service"]` | Test/build file-service; không sửa EKS GitOps |
+| **6** | `shared/src/health.js` | **RUN** | **RUN** | **RUN** | **RUN** | `["frontend","backend-1","backend-2","backend-3","file-service"]` | Test & build toàn bộ 5 components |
 | **6** | `docs/README.md` | SKIP | SKIP | SKIP | SKIP | `[]` | Không build container nào |
 | **7** | `README.md` | SKIP | SKIP | SKIP | SKIP | `[]` | Không build container nào |
 | **8** | `frontend/src/app.js` + `services/backend-3/src/app.js` | **RUN** | SKIP | SKIP | **RUN** | `["frontend","backend-3"]` | Test & build frontend và backend-3 song song |
@@ -64,12 +65,14 @@ bash ci/detect_changes.sh /tmp/sample_diff.txt
   [PASS] Frontend change => ["frontend"]
   [PASS] Backend-1 change => ["backend-1"]
   [PASS] Backend-3 change => ["backend-3"]
-  [PASS] Shared change triggers all 4 => ["frontend","backend-1","backend-2","backend-3"]
+  [PASS] File-service change => ["file-service"]
+  [PASS] Shared change triggers all 5 => ["frontend","backend-1","backend-2","backend-3","file-service"]
   [PASS] Docs change skips all => []
   [PASS] Root README change skips all => []
   [PASS] Docs + README change skips all => []
   [PASS] Multiple services (frontend + backend-3) => ["frontend","backend-3"]
-==> Change detection test results: 9 passed, 0 failed.
+  [PASS] Multiple services (frontend + file-service) => ["frontend","file-service"]
+==> Change detection test results: 13 passed, 0 failed.
 ```
 
 ## Verification

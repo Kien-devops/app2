@@ -7,6 +7,7 @@ frontend=false
 backend1=false
 backend2=false
 backend3=false
+file_service=false
 all=false
 
 while IFS= read -r line || [[ -n "$line" ]]; do
@@ -30,6 +31,9 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     services/backend-3/*)
       [[ "$path" != "services/backend-3/.gitkeep" ]] && backend3=true
       ;;
+    services/file-service/*)
+      file_service=true
+      ;;
   esac
 done < "$file"
 
@@ -38,6 +42,7 @@ if [[ "$all" == true ]]; then
   backend1=true
   backend2=true
   backend3=true
+  file_service=true
 fi
 
 items=()
@@ -45,6 +50,7 @@ items=()
 [[ "$backend1" == true ]] && items+=("\"backend-1\"")
 [[ "$backend2" == true ]] && items+=("\"backend-2\"")
 [[ "$backend3" == true ]] && items+=("\"backend-3\"")
+[[ "$file_service" == true ]] && items+=("\"file-service\"")
 
 if [[ ${#items[@]} -eq 0 ]]; then
   echo "[]"

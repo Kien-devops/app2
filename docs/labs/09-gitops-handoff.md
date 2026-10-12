@@ -22,7 +22,7 @@ Trong kiến trúc DevOps truyền thống kiểu "Push-based Deployment":
   3. **Không có lịch sử kiểm toán thống nhất**: Không biết được phiên bản nào đang thực sự chạy trên cluster nếu ai đó bỏ qua CI.
 
 ### 2. Kiến Trúc Handoff Đơn Nhiệm (Single GitOps Update Job)
-Nhiều pipeline Monorepo mắc sai lầm để mỗi matrix job tự clone và push repo GitOps: khi thay đổi thư viện `shared/**`, cả 4 matrix jobs build xong gần như cùng lúc và cùng push vào nhánh `main` của repo hạ tầng, dẫn đến lỗi xung đột đẩy mã (`non-fast-forward push rejection`).
+Nhiều pipeline Monorepo để mỗi matrix job tự push GitOps, gây `non-fast-forward`. Pipeline này dùng một job và `concurrency` để tuần tự hóa handoff.
 
 Pipeline của `app2` giải quyết triệt để vấn đề này bằng kiến trúc **Single Job Handoff**:
 
@@ -35,11 +35,13 @@ Pipeline của `app2` giải quyết triệt để vấn đề này bằng kiế
   ├── backend-1 build & push ECR
   ├── backend-2 build & push ECR
   └── backend-3 build & push ECR
+  └── file-service build & push ECR (EC2 artifact)
            │
            │ (Chờ tất cả matrix jobs hoàn tất thành công)
            ▼
 [ Job 3: gitops-update (Duy nhất 1 Runner) ]
-  ├── Nhận danh sách components từ detect-changes: ["frontend","backend-1","backend-2","backend-3"]
+  ├── Nhận danh sách components từ detect-changes
+  ├── Lọc file-service vì workload này chạy trên EC2, không phải EKS
   ├── Clone repo "aws-multi-region-dr-platform"
   ├── Cập nhật đúng các thẻ image trong kustomization.yaml
   └── Thực hiện DUY NHẤT 1 commit & 1 push lên main! (Zero Race Condition)
@@ -110,6 +112,8 @@ images:
     newTag: <SHA_MỚI>
 ```
 Những component không thay đổi sẽ được giữ nguyên tag hiện tại, đảm bảo tính nguyên vẹn tuyệt đối của hệ thống GitOps.
+
+`file-service` chỉ được test/build/scan/push ECR. Job handoff bị skip khi đây là component duy nhất thay đổi; không tạo Kustomize entry giả. Push collision được retry tối đa 5 lần và job fail rõ nếu mọi lần đều thất bại.
 
 ---
 

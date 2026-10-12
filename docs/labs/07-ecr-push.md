@@ -10,6 +10,7 @@ Nắm rõ quy trình gắn thẻ (tagging) và đẩy container image lên Amazo
   - `app2-backend-1`
   - `app2-backend-2`
   - `app2-backend-3`
+  - `app2-file-service`
 
 ## Files involved
 - `.github/workflows/ci.yml` (Step `Login to Amazon ECR` và `Push image to Amazon ECR`)
@@ -24,6 +25,7 @@ Nắm rõ quy trình gắn thẻ (tagging) và đẩy container image lên Amazo
 | **backend-1** | `services/backend-1/` | `app2-backend-1` | `ap-southeast-1` (Singapore) |
 | **backend-2** | `services/backend-2/` | `app2-backend-2` | `ap-southeast-1` (Singapore) |
 | **backend-3** | `services/backend-3/` | `app2-backend-3` | `ap-southeast-1` (Singapore) |
+| **file-service** | `services/file-service/` | `app2-file-service` | `ap-southeast-1` (Singapore) |
 
 ### 2. Chiến Lược Gắn Thẻ Bất Biến (Immutable Tagging Strategy)
 
