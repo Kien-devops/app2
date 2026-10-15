@@ -166,6 +166,11 @@ $('#order-form').addEventListener('submit',e=>{e.preventDefault();create($('#ite
 </script></main></body></html>`;
 }
 
+function renderDataPage(title, endpoint, heading) {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
+<style>body{margin:0;padding:2rem;background:#0f172a;color:#f8fafc;font:16px system-ui,sans-serif}main{max-width:900px;margin:auto}.card{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:1.5rem}a{color:#7dd3fc}pre{white-space:pre-wrap;overflow:auto;background:#020617;padding:1rem;border-radius:6px}</style></head><body><main><p><a href="/">Home</a> · <a href="/orders">Orders</a> · <a href="/api/v1/catalog">Catalog API</a> · <a href="/api/v1/info">System Info API</a></p><section class="card"><h1>${heading}</h1><pre id="data">Loading...</pre></section><script>fetch('${endpoint}').then(r=>r.json()).then(v=>document.querySelector('#data').textContent=JSON.stringify(v,null,2)).catch(e=>document.querySelector('#data').textContent=e.message)</script></main></body></html>`;
+}
+
 function handleRequest(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   
@@ -196,7 +201,7 @@ function handleRequest(req, res) {
   <div class="card">
     <h1>Order Management</h1>
     <p>Welcome back. Service region: <span class="badge">${region}</span></p>
-    <p><a href="/orders" style="color:#7dd3fc">Orders</a> · <a href="/files" style="color:#7dd3fc">File Storage</a></p>
+    <p><a href="/info" style="color:#7dd3fc">System Info</a> · <a href="/catalog" style="color:#7dd3fc">Catalog</a> · <a href="/orders" style="color:#7dd3fc">Orders</a> · <a href="/files" style="color:#7dd3fc">File Storage</a></p>
   </div>
 </body>
 </html>`;
@@ -217,6 +222,18 @@ function handleRequest(req, res) {
     return;
   }
 
+  if (url.pathname === '/info') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(renderDataPage('System Info', '/api/v1/info', 'System Info'));
+    return;
+  }
+
+  if (url.pathname === '/catalog') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(renderDataPage('Catalog', '/api/v1/catalog', 'Catalog'));
+    return;
+  }
+
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'Not Found', service: SERVICE_NAME }));
 }
@@ -226,5 +243,6 @@ module.exports = {
   getHealthStatus,
   fileServiceBaseUrl,
   renderFilesPage,
+  renderDataPage,
   handleRequest
 };

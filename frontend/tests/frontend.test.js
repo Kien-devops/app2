@@ -96,3 +96,17 @@ test('frontend handleRequest serves the orders page', () => {
   assert.ok(!body.includes('DR Marker'));
   assert.ok(!body.includes('Aurora PostgreSQL'));
 });
+
+test('frontend serves product navigation pages', () => {
+  for (const path of ['/info', '/catalog']) {
+    let statusCode = null;
+    let body = '';
+    handleRequest({ url: path, headers: { host: 'localhost:3000' } }, {
+      writeHead(code) { statusCode = code; },
+      end(data) { body = data; }
+    });
+    assert.strictEqual(statusCode, 200);
+    assert.ok(body.includes('<h1>'));
+    assert.ok(body.includes('Home'));
+  }
+});
