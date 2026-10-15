@@ -144,6 +144,29 @@ function renderFilesPage() {
 </html>`;
 }
 
+function renderOrdersPage() {
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orders / Database Test</title>
+<style>
+:root{--ink:#17221d;--paper:#f4efe2;--card:#fffaf0;--line:#c8bda8;--accent:#bf4d28;--good:#207a57;--bad:#a12c35}
+*{box-sizing:border-box}body{margin:0;color:var(--ink);background:radial-gradient(circle at top right,#e8c777 0,transparent 30%),var(--paper);font:16px Georgia,"Times New Roman",serif}main{width:min(1100px,calc(100% - 2rem));margin:2rem auto}header{border-bottom:4px double var(--ink);padding-bottom:1rem;display:flex;justify-content:space-between;gap:1rem;align-items:end}h1{margin:0;font-size:clamp(2rem,7vw,4rem);line-height:.9}.kicker,button,input{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.kicker{text-transform:uppercase;letter-spacing:.12em}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin:1.5rem 0}.card{background:var(--card);border:1px solid var(--line);box-shadow:5px 5px 0 var(--ink);padding:1rem}.value{display:block;font-size:1.35rem;font-weight:bold;margin-top:.4rem}.good{color:var(--good)}.bad{color:var(--bad)}form{display:flex;gap:.75rem;flex-wrap:wrap}input{padding:.7rem;border:1px solid var(--line);background:white;min-width:150px;flex:1}button{border:1px solid var(--ink);background:var(--ink);color:white;padding:.7rem .9rem;cursor:pointer}button:hover{background:var(--accent)}table{width:100%;border-collapse:collapse;margin-top:1.5rem;background:var(--card)}th,td{padding:.75rem;text-align:left;border-bottom:1px solid var(--line)}th{background:var(--ink);color:white}#message{min-height:1.5rem;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}@media(max-width:720px){header{display:block}.grid{grid-template-columns:1fr}table,thead,tbody,tr,th,td{display:block}thead{display:none}td{border:0;padding:.35rem .75rem}tr{border-bottom:2px solid var(--ink);padding:.6rem 0}}
+</style></head><body><main>
+<header><div><div class="kicker">Aurora PostgreSQL</div><h1>Orders / Database Test</h1></div><a href="/">Back to dashboard</a></header>
+<section class="grid"><div class="card"><span class="kicker">Backend API</span><span id="api" class="value">Checking...</span></div><div class="card"><span class="kicker">Database</span><span id="db" class="value">Checking...</span></div><div class="card"><span class="kicker">Endpoint</span><span class="value">/api/v1/orders</span></div></section>
+<section class="card"><h2>Create Order</h2><form id="order-form"><input id="item" aria-label="Item ID" placeholder="Item ID" value="cicd-e2e-test" required><input id="qty" aria-label="Quantity" type="number" min="1" value="1" required><input id="marker" aria-label="Marker" placeholder="Marker" required><button>Create Order</button></form><p id="message" role="status" aria-live="polite"></p></section>
+<section class="card"><h2>DR Marker Test</h2><form id="marker-form"><input id="dr-marker" aria-label="DR marker" placeholder="SG-DR-TEST-..." required><button>Create DR Marker</button></form></section>
+<section class="card"><div style="display:flex;justify-content:space-between;gap:1rem;align-items:center"><h2>Orders</h2><button id="refresh">Refresh</button></div><table><thead><tr><th>ID</th><th>Item ID</th><th>Quantity</th><th>Marker</th><th>Created At</th></tr></thead><tbody id="orders"><tr><td colspan="5">Loading...</td></tr></tbody></table></section>
+<script>
+const $=s=>document.querySelector(s), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function json(path,options){const r=await fetch(path,options);const b=await r.json().catch(()=>({}));if(!r.ok)throw Error(b.message||b.error||('HTTP '+r.status));return b}
+async function status(){try{const b=await json('/api/v1/orders/health');$('#api').textContent='Available';$('#api').className='value good';$('#db').textContent=b.database==='connected'?'Connected':'Disconnected';$('#db').className='value '+(b.database==='connected'?'good':'bad')}catch(e){$('#api').textContent='Unavailable';$('#api').className='value bad';$('#db').textContent='Disconnected';$('#db').className='value bad';$('#message').textContent=e.message}}
+async function refresh(){try{const rows=await json('/api/v1/orders');$('#orders').innerHTML=rows.length?rows.map(o=>'<tr><td>'+esc(o.id)+'</td><td>'+esc(o.item_id)+'</td><td>'+esc(o.quantity)+'</td><td>'+esc(o.marker)+'</td><td>'+esc(o.created_at)+'</td></tr>').join(''):'<tr><td colspan="5">No orders yet.</td></tr>'}catch(e){$('#orders').innerHTML='<tr><td colspan="5" class="bad">'+esc(e.message)+'</td></tr>'}}
+async function create(item,quantity,marker){$('#message').textContent='Saving...';try{const order=await json('/api/v1/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_id:item,quantity:Number(quantity),marker})});$('#message').textContent='Created order #'+order.id;await refresh()}catch(e){$('#message').textContent=e.message}}
+$('#order-form').addEventListener('submit',e=>{e.preventDefault();create($('#item').value,$('#qty').value,$('#marker').value)});$('#marker-form').addEventListener('submit',e=>{e.preventDefault();const m='SG-DR-TEST-'+Date.now();$('#dr-marker').value=m;create('dr-marker',1,m)});$('#refresh').addEventListener('click',refresh);Promise.all([status(),refresh()]);
+</script></main></body></html>`;
+}
+
 function handleRequest(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   
@@ -175,7 +198,7 @@ function handleRequest(req, res) {
     <h1>App2 Multi-Region DR Dashboard</h1>
     <p>Service: <strong>frontend</strong> | Active Region: <span class="badge">${region}</span></p>
     <p>Backend Topology: backend-1 (8081), backend-2 (8082 - Catalog), backend-3 (8083 - Orders / PostgreSQL)</p>
-    <p><a href="/files" style="color:#7dd3fc">Open File Storage DR</a></p>
+    <p><a href="/orders" style="color:#7dd3fc">Open Orders / Database Test</a> · <a href="/files" style="color:#7dd3fc">Open File Storage DR</a></p>
   </div>
 </body>
 </html>`;
@@ -187,6 +210,12 @@ function handleRequest(req, res) {
   if (url.pathname === '/files') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(renderFilesPage());
+    return;
+  }
+
+  if (url.pathname === '/orders') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(renderOrdersPage());
     return;
   }
 

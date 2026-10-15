@@ -82,3 +82,15 @@ test('frontend handleRequest responds 200 on /files', () => {
   assert.equal(statusCode, 200);
   assert.ok(body.includes('Filesystem disaster recovery'));
 });
+
+test('frontend handleRequest serves the orders database test page', () => {
+  let statusCode = null;
+  let body = '';
+  const req = { url: '/orders', headers: { host: 'localhost:3000' } };
+  const res = { writeHead(code) { statusCode = code; }, end(data) { body = data; } };
+  handleRequest(req, res);
+  assert.equal(statusCode, 200);
+  assert.ok(body.includes('Orders / Database Test'));
+  assert.ok(body.includes('/api/v1/orders/health'));
+  assert.ok(body.includes('Create DR Marker'));
+});

@@ -101,6 +101,14 @@ test('backend-3 handleRequest returns 200 on /api/v1/info', async () => {
   assert.ok(res.json.role.includes('PostgreSQL'));
 });
 
+test('backend-3 health reports database connectivity', async () => {
+  const handler = createRequestHandler({ checkHealth: async () => true });
+  const res = mockRes();
+  await handler({ url: '/api/v1/orders/health', method: 'GET', headers: { host: 'localhost:8083' } }, res);
+  assert.strictEqual(res.statusCode, 200);
+  assert.deepStrictEqual(res.json, { status: 'ok', database: 'connected', timestamp: res.json.timestamp });
+});
+
 test('backend-3 POST /api/v1/orders validates item_id', async () => {
   const mockDb = createMockDb();
   const handler = createRequestHandler(mockDb);

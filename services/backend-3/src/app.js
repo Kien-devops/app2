@@ -68,6 +68,17 @@ function createRequestHandler(db = defaultDb) {
       return;
     }
 
+    if (url.pathname === '/api/v1/orders/health' && req.method === 'GET') {
+      const connected = await db.checkHealth();
+      res.writeHead(connected ? 200 : 503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: connected ? 'ok' : 'error',
+        database: connected ? 'connected' : 'disconnected',
+        timestamp: new Date().toISOString()
+      }, null, 2));
+      return;
+    }
+
     if (url.pathname === '/api/v1/orders/latest' && req.method === 'GET') {
       const runId = url.searchParams.get('runId');
       const maxSequence = parseMaxSequence(url.searchParams.get('maxSequence'));
