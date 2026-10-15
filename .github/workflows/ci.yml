@@ -152,8 +152,8 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_GITHUB_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
+          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION || 'ap-southeast-1' }}
 
       - name: Login to Amazon ECR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -190,8 +190,8 @@ jobs:
       - name: Configure AWS credentials via OIDC (for ECR Registry Discovery)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_GITHUB_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
+          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION || 'ap-southeast-1' }}
 
       - name: Resolve ECR Registry
         id: ecr
@@ -200,7 +200,7 @@ jobs:
       - name: Update GitOps Repository Manifests
         shell: bash
         env:
-          GITOPS_REPO: ${{ vars.GITOPS_REPO || 'Kien-devops/aws-multi-region-dr-platform' }}
+          GITOPS_REPO: ${{ secrets.GITOPS_REPO || 'Kien-devops/aws-multi-region-dr-platform' }}
           GITOPS_TOKEN: ${{ secrets.GITOPS_GITHUB_TOKEN }}
           REGISTRY: ${{ steps.ecr.outputs.registry }}
           NEW_TAG: ${{ github.sha }}
