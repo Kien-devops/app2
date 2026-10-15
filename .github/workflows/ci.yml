@@ -150,6 +150,17 @@ jobs:
 
       - name: Configure AWS credentials via OIDC
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          ROLE_ARN: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
+        shell: bash
+        run: |
+          test "$ROLE_ARN" = "arn:aws:iam::620306387033:role/app2-github-actions-role" || {
+            echo "::error::AWS_GITHUB_ROLE_ARN secret is missing or does not match the provisioned role."
+            exit 1
+          }
+
+      - name: Assume AWS role via OIDC
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
@@ -188,6 +199,16 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials via OIDC (for ECR Registry Discovery)
+        env:
+          ROLE_ARN: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
+        shell: bash
+        run: |
+          test "$ROLE_ARN" = "arn:aws:iam::620306387033:role/app2-github-actions-role" || {
+            echo "::error::AWS_GITHUB_ROLE_ARN secret is missing or does not match the provisioned role."
+            exit 1
+          }
+
+      - name: Assume AWS role via OIDC (for ECR Registry Discovery)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
