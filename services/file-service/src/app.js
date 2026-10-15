@@ -15,6 +15,13 @@ function getHealthStatus() {
   return createHealthResponse(SERVICE_NAME);
 }
 
+function parseMaxSequence(value) {
+  if (value === null) return null;
+  if (!/^[0-9]+$/.test(value)) return NaN;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : NaN;
+}
+
 function readJson(req, maxBytes = 64 * 1024) {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -165,7 +172,12 @@ function createRequestHandler(options = {}) {
       }
 
       if (url.pathname === '/api/v1/storage/events/latest' && req.method === 'GET') {
-        const event = await storage.latestEvent();
+        const maxSequence = parseMaxSequence(url.searchParams.get('maxSequence'));
+        if (Number.isNaN(maxSequence)) {
+          sendJson(res, 400, { error: 'maxSequence must be a positive safe integer' }, cors);
+          return;
+        }
+        const event = await storage.latestEvent(url.searchParams.get('runId'), maxSequence);
         sendJson(res, event ? 200 : 404, event || { error: 'No storage events found' }, cors);
         return;
       }

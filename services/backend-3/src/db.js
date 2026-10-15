@@ -136,6 +136,26 @@ async function getOrders({ marker = null, limit = 50 } = {}) {
   return res.rows;
 }
 
+async function getLatestOrderByRunId(runId, maxSequence = null) {
+  const p = getPool();
+  if (!p) {
+    throw new Error('Database not configured (DB_HOST missing)');
+  }
+
+  const prefix = `DR-${runId}-SEQ-`;
+  const query = `
+    SELECT id, item_id, quantity, marker, created_at
+    FROM orders
+    WHERE LEFT(marker, LENGTH($1)) = $1
+      AND SUBSTRING(marker FROM LENGTH($1) + 1) ~ '^[0-9]{6,}$'
+      AND ($2::NUMERIC IS NULL OR SUBSTRING(marker FROM LENGTH($1) + 1)::NUMERIC <= $2::NUMERIC)
+    ORDER BY SUBSTRING(marker FROM LENGTH($1) + 1)::NUMERIC DESC, id DESC
+    LIMIT 1;
+  `;
+  const res = await p.query(query, [prefix, maxSequence]);
+  return res.rows[0] || null;
+}
+
 async function close() {
   if (pool) {
     await pool.end();
@@ -151,5 +171,6 @@ module.exports = {
   checkHealth,
   createOrder,
   getOrders,
+  getLatestOrderByRunId,
   close
 };

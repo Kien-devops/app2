@@ -37,6 +37,18 @@ function createMockDb(initialOrders = []) {
         return orders.filter((o) => o.marker === marker);
       }
       return orders.slice(0, limit || 50);
+    },
+    async getLatestOrderByRunId(runId, maxSequence = null) {
+      if (!isAvailable) {
+        throw new Error('Database connection failed (mock)');
+      }
+      const pattern = new RegExp(`^DR-${runId}-SEQ-(\\d{6,})$`);
+      return orders
+        .map((order) => ({ order, match: order.marker && order.marker.match(pattern) }))
+        .filter(({ match }) => match)
+        .filter(({ match }) => maxSequence === null || Number(match[1]) <= maxSequence)
+        .sort((a, b) => Number(b.match[1]) - Number(a.match[1]) || b.order.id - a.order.id)
+        .map(({ order }) => order)[0] || null;
     }
   };
 }
@@ -190,6 +202,68 @@ test('backend-3 supports RPO sequence marker in POST /api/v1/orders', async () =
   assert.strictEqual(queryRes.statusCode, 200);
   assert.strictEqual(queryRes.json.length, 1);
   assert.strictEqual(queryRes.json[0].marker, 'SEQ-000002');
+});
+
+test('backend-3 returns the highest padded DR marker for the exact runId', async () => {
+  const mockDb = createMockDb([
+    { id: 1, marker: 'DR-run-A-SEQ-000099' },
+    { id: 2, marker: 'DR-run-B-SEQ-000010' },
+    { id: 3, marker: 'DR-run-A-SEQ-000100' },
+    { id: 4, marker: 'DR-run-A-extra-SEQ-999999' }
+  ]);
+  const handler = createRequestHandler(mockDb);
+  const req = { url: '/api/v1/orders/latest?runId=run-A', method: 'GET', headers: { host: 'localhost:8083' } };
+  const res = mockRes();
+
+  await handler(req, res);
+
+  assert.strictEqual(res.statusCode, 200);
+  assert.deepStrictEqual(res.json, { runId: 'run-A', marker: 'DR-run-A-SEQ-000100', sequence: 100 });
+});
+
+test('backend-3 latest DR marker ignores post-recovery writes above maxSequence', async () => {
+  const mockDb = createMockDb([
+    { id: 1, marker: 'DR-run-A-SEQ-000098' },
+    { id: 2, marker: 'DR-run-A-SEQ-000099' },
+    { id: 3, marker: 'DR-run-A-SEQ-000101' },
+    { id: 4, marker: 'DR-run-A-SEQ-000120' },
+    { id: 5, marker: 'DR-run-B-SEQ-000999' }
+  ]);
+  const handler = createRequestHandler(mockDb);
+  const res = mockRes();
+
+  await handler({
+    url: '/api/v1/orders/latest?runId=run-A&maxSequence=100',
+    method: 'GET',
+    headers: { host: 'localhost:8083' }
+  }, res);
+
+  assert.strictEqual(res.statusCode, 200);
+  assert.deepStrictEqual(res.json, { runId: 'run-A', marker: 'DR-run-A-SEQ-000099', sequence: 99 });
+});
+
+test('backend-3 latest DR marker rejects invalid maxSequence values', async () => {
+  const handler = createRequestHandler(createMockDb());
+  for (const value of ['0', '-1', 'abc', '1.5', '9007199254740992']) {
+    const res = mockRes();
+    await handler({
+      url: `/api/v1/orders/latest?runId=run-A&maxSequence=${encodeURIComponent(value)}`,
+      method: 'GET',
+      headers: { host: 'localhost:8083' }
+    }, res);
+    assert.strictEqual(res.statusCode, 400);
+    assert.ok(res.json.error.includes('maxSequence'));
+  }
+});
+
+test('backend-3 latest DR marker requires a safe runId', async () => {
+  const handler = createRequestHandler(createMockDb());
+  for (const url of ['/api/v1/orders/latest', '/api/v1/orders/latest?runId=../run-A']) {
+    const res = mockRes();
+    await handler({ url, method: 'GET', headers: { host: 'localhost:8083' } }, res);
+    assert.strictEqual(res.statusCode, 400);
+    assert.ok(res.json.error.includes('runId'));
+  }
 });
 
 test('backend-3 returns 503 on POST /api/v1/orders when DB is unavailable', async () => {

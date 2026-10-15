@@ -139,7 +139,7 @@ jobs:
             .
 
       - name: Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "local/${{ steps.meta.outputs.repository }}:${{ github.sha }}"
           format: "table"
@@ -171,10 +171,6 @@ jobs:
           echo "==> Pushing immutable SHA tag: $IMAGE:${GITHUB_SHA}"
           docker tag "local/$REPOSITORY:${GITHUB_SHA}" "$IMAGE:${GITHUB_SHA}"
           docker push "$IMAGE:${GITHUB_SHA}"
-
-          echo "==> Pushing main branch tag: $IMAGE:main"
-          docker tag "local/$REPOSITORY:${GITHUB_SHA}" "$IMAGE:main"
-          docker push "$IMAGE:main"
 
           echo "==> Image pushed successfully to ap-southeast-1."
           echo "==> Cross-region replication will automatically replicate to ap-northeast-1 (Tokyo)."
@@ -211,9 +207,9 @@ jobs:
           COMPONENTS_JSON: ${{ needs.detect-changes.outputs.gitops_matrix }}
         run: |
           if [[ -z "${GITOPS_TOKEN:-}" ]]; then
-            echo "::warning::GITOPS_GITHUB_TOKEN secret is not configured. Skipping GitOps handoff."
-            echo "To enable automated GitOps handoff, add repository secret GITOPS_GITHUB_TOKEN with write access to $GITOPS_REPO."
-            exit 0
+            echo "::error::GITOPS_GITHUB_TOKEN secret is not configured; refusing to skip GitOps handoff."
+            echo "Add repository secret GITOPS_GITHUB_TOKEN with write access to $GITOPS_REPO."
+            exit 1
           fi
 
           echo "==> Initiating single-job GitOps handoff for components: $COMPONENTS_JSON"

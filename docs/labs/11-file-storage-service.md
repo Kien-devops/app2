@@ -67,9 +67,9 @@ Storage RPO marker:
 ```bash
 curl -s -X POST http://localhost:8084/api/v1/storage/events \
   -H 'Content-Type: application/json' \
-  -d '{"sequence":10001,"marker":"DR-SEQ-010001"}'
+  -d '{"runId":"run-A","sequence":10001,"marker":"DR-run-A-SEQ-010001"}'
 
-curl -s http://localhost:8084/api/v1/storage/events/latest
+curl -s "http://localhost:8084/api/v1/storage/events/latest?runId=run-A"
 ```
 
 Filesystem layout:
@@ -78,7 +78,7 @@ Filesystem layout:
 /mnt/dr-data/
 ├── uploads/<uuid>-<sanitized-name>
 ├── metadata/<uuid>.json
-└── events/010001.json
+└── events/run-A/010001.json
 ```
 
 ## Frontend

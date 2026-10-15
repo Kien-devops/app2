@@ -42,7 +42,7 @@ Pipeline `app2` sử dụng **Git Commit SHA** (`${GITHUB_SHA}`) làm thẻ chí
 - **Bảo đảm tính nguyên vẹn trong Disaster Recovery (DR)**: Khi đồng bộ sang vùng Tokyo, cả hai vùng đều chắc chắn đang chạy đúng cùng một SHA mà không bị xáo trộn phiên bản.
 - **Supply Chain Security**: Cho phép tích hợp chữ ký số Cosign và tạo Software Bill of Materials (SBOM) gắn liền với từng commit.
 
-*Ghi chú: Pipeline có thể gắn thêm tag phụ `:main` để thuận tiện cho việc tham chiếu nhánh, nhưng hệ thống GitOps luôn luôn sử dụng tag SHA.*
+Pipeline chỉ push tag SHA. Không push tag nhánh, `latest` hoặc `stable`; mọi image triển khai đều ánh xạ duy nhất tới một Git commit.
 
 ### 3. Quy trình Đăng nhập và Đẩy Image trong CI
 
@@ -57,9 +57,7 @@ Pipeline `app2` sử dụng **Git Commit SHA** (`${GITHUB_SHA}`) làm thẻ chí
    docker tag "local/$REPOSITORY:${GITHUB_SHA}" "$IMAGE:${GITHUB_SHA}"
    docker push "$IMAGE:${GITHUB_SHA}"
 
-   # Gắn tag phụ main
-   docker tag "local/$REPOSITORY:${GITHUB_SHA}" "$IMAGE:main"
-   docker push "$IMAGE:main"
+   # Không tạo mutable tag như main/latest/stable.
    ```
 
 ## Commands
@@ -100,7 +98,7 @@ c3d4e5f6a1b2: Pushed
 2. Chọn repository `app2-backend-1`.
 3. Kiểm tra danh sách image:
    - Xuất hiện tag bằng đúng mã commit SHA của GitHub.
-   - Trạng thái Image tags hiển thị đầy đủ `<COMMIT_SHA>` và `main`.
+   - Image tags chỉ hiển thị đúng `<COMMIT_SHA>`; không có tag mutable `main`, `latest` hoặc `stable`.
    - Dung lượng image nhỏ gọn và đúng kiến trúc `linux/amd64`.
 
 ## Troubleshooting

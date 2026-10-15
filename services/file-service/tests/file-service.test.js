@@ -162,22 +162,60 @@ test('read-only readiness result is exposed without claiming writable storage', 
   assert.equal(payload.reason, 'filesystem_read_only');
 });
 
-test('storage events persist deterministic sequences and latest returns the maximum', async (t) => {
+test('storage events isolate runs and latest honors the pre-failure maxSequence', async (t) => {
   const fixture = await createFixture();
   t.after(() => fixture.close());
-  for (const sequence of [10001, 10003, 10002]) {
+  for (const sequence of [1, 98, 99, 101, 120]) {
     const response = await fetch(`${fixture.baseUrl}/api/v1/storage/events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sequence, marker: `DR-SEQ-${String(sequence).padStart(6, '0')}` })
+      body: JSON.stringify({ runId: 'run-A', sequence, marker: `DR-run-A-SEQ-${String(sequence).padStart(6, '0')}` })
     });
     assert.equal(response.status, 201);
   }
 
-  assert.equal(await fs.readFile(path.join(fixture.root, 'events', '010001.json'), 'utf8').then(Boolean), true);
-  const latest = await fetch(`${fixture.baseUrl}/api/v1/storage/events/latest`);
+  for (const sequence of [1, 999]) {
+    const secondRun = await fetch(`${fixture.baseUrl}/api/v1/storage/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: 'run-B', sequence, marker: `DR-run-B-SEQ-${String(sequence).padStart(6, '0')}` })
+    });
+    assert.equal(secondRun.status, 201);
+  }
+
+  assert.equal(await fs.readFile(path.join(fixture.root, 'events', 'run-A', '000001.json'), 'utf8').then(Boolean), true);
+  assert.equal(await fs.readFile(path.join(fixture.root, 'events', 'run-B', '000001.json'), 'utf8').then(Boolean), true);
+  const latest = await fetch(`${fixture.baseUrl}/api/v1/storage/events/latest?runId=run-A`);
   assert.equal(latest.status, 200);
-  assert.equal((await latest.json()).sequence, 10003);
+  const latestPayload = await latest.json();
+  assert.equal(latestPayload.runId, 'run-A');
+  assert.equal(latestPayload.sequence, 120);
+
+  const latestAtFailure = await fetch(`${fixture.baseUrl}/api/v1/storage/events/latest?runId=run-A&maxSequence=100`);
+  assert.equal(latestAtFailure.status, 200);
+  assert.equal((await latestAtFailure.json()).sequence, 99);
+
+  const latestSecondRun = await fetch(`${fixture.baseUrl}/api/v1/storage/events/latest?runId=run-B`);
+  assert.equal((await latestSecondRun.json()).sequence, 999);
+});
+
+test('storage latest returns 404 when no event is at or below maxSequence', async (t) => {
+  const fixture = await createFixture();
+  t.after(() => fixture.close());
+  await fixture.storage.writeEvent({ runId: 'run-C', sequence: 101, marker: 'DR-run-C-SEQ-000101' });
+
+  const response = await fetch(`${fixture.baseUrl}/api/v1/storage/events/latest?runId=run-C&maxSequence=100`);
+  assert.equal(response.status, 404);
+});
+
+test('storage latest rejects invalid maxSequence values', async (t) => {
+  const fixture = await createFixture();
+  t.after(() => fixture.close());
+  for (const value of ['0', '-1', 'abc', '1.5', '9007199254740992']) {
+    const response = await fetch(`${fixture.baseUrl}/api/v1/storage/events/latest?runId=run-A&maxSequence=${encodeURIComponent(value)}`);
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /maxSequence/);
+  }
 });
 
 test('storage events reject sequence zero', async (t) => {
@@ -186,10 +224,39 @@ test('storage events reject sequence zero', async (t) => {
   const response = await fetch(`${fixture.baseUrl}/api/v1/storage/events`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sequence: 0, marker: 'DR-SEQ-000000' })
+    body: JSON.stringify({ runId: 'run-A', sequence: 0, marker: 'DR-run-A-SEQ-000000' })
   });
   assert.equal(response.status, 400);
   assert.match((await response.json()).error, /positive integer/);
+});
+
+test('storage events require a safe runId for writes and latest reads', async (t) => {
+  const fixture = await createFixture();
+  t.after(() => fixture.close());
+
+  const write = await fetch(`${fixture.baseUrl}/api/v1/storage/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sequence: 1, marker: 'DR-run-A-SEQ-000001' })
+  });
+  assert.equal(write.status, 400);
+  assert.match((await write.json()).error, /runId/);
+
+  const latest = await fetch(`${fixture.baseUrl}/api/v1/storage/events/latest`);
+  assert.equal(latest.status, 400);
+  assert.match((await latest.json()).error, /runId/);
+});
+
+test('storage events reject a marker that disagrees with runId or sequence', async (t) => {
+  const fixture = await createFixture();
+  t.after(() => fixture.close());
+  const response = await fetch(`${fixture.baseUrl}/api/v1/storage/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ runId: 'run-A', sequence: 1, marker: 'DR-run-B-SEQ-000001' })
+  });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /DR-run-A-SEQ-000001/);
 });
 
 test('failed data deletion restores metadata instead of leaving a dangling record', async (t) => {

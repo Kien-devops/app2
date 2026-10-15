@@ -8,6 +8,7 @@ const { Transform } = require('node:stream');
 const { sha256File } = require('./checksum');
 
 const ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
 
 function storageError(code, statusCode, message) {
   const error = new Error(message);
@@ -19,6 +20,12 @@ function storageError(code, statusCode, message) {
 function validateId(id) {
   if (!ID_PATTERN.test(id)) {
     throw storageError('INVALID_FILE_ID', 400, 'Invalid file id');
+  }
+}
+
+function validateRunId(runId) {
+  if (typeof runId !== 'string' || !RUN_ID_PATTERN.test(runId)) {
+    throw storageError('INVALID_RUN_ID', 400, 'runId must be 1-64 letters, numbers, or hyphens');
   }
 }
 
@@ -184,22 +191,30 @@ class Storage {
     await operations.rm(tombstone, { force: true }).catch(() => {});
   }
 
-  async writeEvent({ sequence, marker }) {
+  async writeEvent({ runId, sequence, marker }) {
     await this.init();
+    validateRunId(runId);
     if (!Number.isSafeInteger(sequence) || sequence < 1) {
       throw storageError('INVALID_SEQUENCE', 400, 'sequence must be a positive integer');
     }
     if (typeof marker !== 'string' || !marker.trim() || marker.length > 128) {
       throw storageError('INVALID_MARKER', 400, 'marker must be a non-empty string up to 128 characters');
     }
+    const expectedMarker = `DR-${runId}-SEQ-${String(sequence).padStart(6, '0')}`;
+    if (marker.trim() !== expectedMarker) {
+      throw storageError('INVALID_MARKER', 400, `marker must be ${expectedMarker}`);
+    }
     const event = {
+      runId,
       sequence,
-      marker: marker.trim(),
+      marker: expectedMarker,
       region: this.region,
       hostname: this.hostname,
       timestamp: new Date().toISOString()
     };
-    const eventPath = path.join(this.eventsPath, `${String(sequence).padStart(6, '0')}.json`);
+    const runPath = path.join(this.eventsPath, runId);
+    await fsp.mkdir(runPath, { recursive: true });
+    const eventPath = path.join(runPath, `${String(sequence).padStart(6, '0')}.json`);
     try {
       await fsp.writeFile(eventPath, `${JSON.stringify(event, null, 2)}\n`, { flag: 'wx' });
       return event;
@@ -213,16 +228,27 @@ class Storage {
     }
   }
 
-  async latestEvent() {
+  async latestEvent(runId, maxSequence = null) {
     await this.init();
-    const entries = await fsp.readdir(this.eventsPath);
+    validateRunId(runId);
+    if (maxSequence !== null && (!Number.isSafeInteger(maxSequence) || maxSequence < 1)) {
+      throw storageError('INVALID_SEQUENCE', 400, 'maxSequence must be a positive safe integer');
+    }
+    const runPath = path.join(this.eventsPath, runId);
+    let entries;
+    try {
+      entries = await fsp.readdir(runPath);
+    } catch (error) {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    }
     const candidates = entries
       .filter((name) => /^\d+\.json$/.test(name))
       .map((name) => ({ name, sequence: Number.parseInt(name, 10) }))
-      .filter(({ sequence }) => Number.isSafeInteger(sequence))
+      .filter(({ sequence }) => Number.isSafeInteger(sequence) && (maxSequence === null || sequence <= maxSequence))
       .sort((a, b) => b.sequence - a.sequence);
     if (!candidates.length) return null;
-    return JSON.parse(await fsp.readFile(path.join(this.eventsPath, candidates[0].name), 'utf8'));
+    return JSON.parse(await fsp.readFile(path.join(runPath, candidates[0].name), 'utf8'));
   }
 
   async checkReadiness() {
@@ -263,4 +289,4 @@ class Storage {
   }
 }
 
-module.exports = { Storage, sanitizeFileName, validateId };
+module.exports = { Storage, sanitizeFileName, validateId, validateRunId };

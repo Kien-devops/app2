@@ -76,7 +76,7 @@ bash ci/detect_changes.sh /tmp/files_scenario_c.txt
 - **Hành động**: Tạo branch mới `feature/update-orders`, sửa file trong `services/backend-3/`, và mở PR vào `main`.
 - **Kỳ vọng (Expected Behavior)**:
   - Pipeline kích hoạt qua trigger `pull_request`.
-  - `backend-3` chạy qua: `Test component` (9 tests) -> `Verify Dockerfile` -> `Build image` (kèm `pg`) -> `Run Trivy scan`.
+  - `backend-3` chạy qua: `Test component` (11 tests) -> `Verify Dockerfile` -> `Build image` (kèm `pg`) -> `Run Trivy scan`.
   - Các bước `Configure AWS credentials via OIDC`, `Push image to ECR` và job `gitops-update` hiển thị trạng thái **SKIPPED**.
   - **Kết quả ECR & GitOps**: Hoàn toàn không có image hay commit rác nào được sinh ra.
 
@@ -100,17 +100,19 @@ bash ci/detect_changes.sh /tmp/files_scenario_c.txt
 Trong bài kiểm tra thảm họa DR trên hạ tầng:
 1. Client gửi luồng ghi liên tục các sequence marker:
    ```bash
-   for i in $(seq -w 1 100); do
+   RUN_ID="run-A"
+   for i in $(seq 1 100); do
+     printf -v sequence '%06d' "$i"
      curl -s -X POST http://backend-3:8083/api/v1/orders \
        -H "Content-Type: application/json" \
-       -d "{\"item_id\":\"dr-sequence\",\"quantity\":1,\"marker\":\"SEQ-$i\"}"
+       -d "{\"item_id\":\"dr-sequence\",\"quantity\":1,\"marker\":\"DR-${RUN_ID}-SEQ-${sequence}\"}"
      sleep 0.5
    done
    ```
 2. Giả lập sự cố ngắt vùng chính (Unplanned Region Failover).
 3. Đọc lại dữ liệu trên vùng Standby (Tokyo) sau khi Aurora thăng cấp Writer:
    ```bash
-   curl -s "http://backend-3-tokyo:8083/api/v1/orders" | jq '.[0]'
+   curl -s "http://backend-3-tokyo:8083/api/v1/orders/latest?runId=${RUN_ID}"
    ```
 4. Đối soát marker cuối cùng nhận được tại Tokyo so với marker cuối cùng client gửi thành công ở Singapore để xác định chính xác số lượng bản ghi thất thoát và độ trễ RPO thực tế.
 

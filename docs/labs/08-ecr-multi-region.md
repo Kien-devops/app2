@@ -61,7 +61,7 @@ Replication Rule được quản lý ở cấp độ **Registry** (áp dụng ch
 
 ### 4. Thời gian trễ sao chép (Replication Latency)
 - Quá trình sao chép giữa Singapore và Tokyo diễn ra gần như tức thì đối với các image kích thước nhỏ (~150MB của `app2`), thông thường hoàn thành trong vòng 15 đến 45 giây sau khi Singapore nhận image.
-- ECR tự động nhân bản cả image manifest, các layer sha256 và mọi tag liên kết (tag SHA và tag `main`).
+- ECR tự động nhân bản image manifest, các layer sha256 và tag SHA bất biến liên kết.
 
 ## Commands
 Cách kiểm tra trạng thái replication bằng AWS CLI:

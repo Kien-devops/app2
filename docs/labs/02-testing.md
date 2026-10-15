@@ -13,7 +13,7 @@ Hiểu và áp dụng Testing Contract thống nhất cho toàn bộ Monorepo. N
 - `frontend/ci/test.sh` & `frontend/tests/frontend.test.js` (3 tests)
 - `services/backend-1/ci/test.sh` & `services/backend-1/tests/backend-1.test.js` (3 tests)
 - `services/backend-2/ci/test.sh` & `services/backend-2/tests/backend-2.test.js` (4 tests)
-- `services/backend-3/ci/test.sh` & `services/backend-3/tests/backend-3.test.js` (9 tests)
+- `services/backend-3/ci/test.sh` & `services/backend-3/tests/backend-3.test.js` (11 tests)
 - `services/file-service/ci/test.sh` & `services/file-service/tests/file-service.test.js`
 - `shared/ci/test.sh` & `shared/tests/health.test.js` (4 tests)
 

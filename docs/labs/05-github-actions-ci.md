@@ -56,7 +56,7 @@ Pipeline được tái cấu trúc thành 3 Job mạch lạc:
                    6. If push on main:
                       - AssumeRole via GitHub OIDC
                       - Login to Amazon ECR
-                      - Push tag :<SHA> & :main (Singapore ap-southeast-1)
+                      - Push immutable tag :<SHA> (Singapore ap-southeast-1)
                                │
                                ▼
                +--------------------------------------+
@@ -73,7 +73,7 @@ Pipeline được tái cấu trúc thành 3 Job mạch lạc:
 
 ### 2. Chính Sách Quét Lỗ Hổng Bảo Mật Container (Trivy Scan Policy)
 
-Pipeline tích hợp bộ quét container Trivy (`aquasecurity/trivy-action@0.29.0`) với lộ trình 2 giai đoạn rõ ràng:
+Pipeline tích hợp bộ quét container Trivy (`aquasecurity/trivy-action@v0.36.0`) với lộ trình 2 giai đoạn rõ ràng:
 
 - **Giai đoạn 1 (Lab Phase - Hiện tại)**:
   `exit-code: "0"` (Chế độ Audit/Audit Mode). Quét và lập bảng thống kê toàn bộ lỗ hổng mức `CRITICAL,HIGH` trong log nhưng không làm fail pipeline ngay lập tức, giúp học viên dễ dàng theo dõi và debug ứng dụng.

@@ -3,6 +3,18 @@ const { createHealthResponse } = require('../../../shared/src/health');
 const defaultDb = require('./db');
 
 const SERVICE_NAME = 'backend-3';
+const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
+
+function isValidRunId(runId) {
+  return typeof runId === 'string' && RUN_ID_PATTERN.test(runId);
+}
+
+function parseMaxSequence(value) {
+  if (value === null) return null;
+  if (!/^[0-9]+$/.test(value)) return NaN;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : NaN;
+}
 
 function getHealthStatus(db = defaultDb) {
   return createHealthResponse(SERVICE_NAME, 'ok');
@@ -53,6 +65,41 @@ function createRequestHandler(db = defaultDb) {
         region: health.region,
         version: '1.0.0'
       }, null, 2));
+      return;
+    }
+
+    if (url.pathname === '/api/v1/orders/latest' && req.method === 'GET') {
+      const runId = url.searchParams.get('runId');
+      const maxSequence = parseMaxSequence(url.searchParams.get('maxSequence'));
+      if (!isValidRunId(runId)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'runId must be 1-64 letters, numbers, or hyphens' }));
+        return;
+      }
+      if (Number.isNaN(maxSequence)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'maxSequence must be a positive safe integer' }));
+        return;
+      }
+
+      try {
+        const order = await db.getLatestOrderByRunId(runId, maxSequence);
+        if (!order) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'No DR marker found for runId' }));
+          return;
+        }
+        const prefix = `DR-${runId}-SEQ-`;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          runId,
+          marker: order.marker,
+          sequence: Number.parseInt(order.marker.slice(prefix.length), 10)
+        }, null, 2));
+      } catch (err) {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Database unavailable', message: err.message }, null, 2));
+      }
       return;
     }
 
@@ -127,6 +174,7 @@ const defaultHandler = createRequestHandler(defaultDb);
 module.exports = {
   SERVICE_NAME,
   getHealthStatus,
+  isValidRunId,
   createRequestHandler,
   handleRequest: defaultHandler
 };

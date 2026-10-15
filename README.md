@@ -64,7 +64,7 @@ Aurora Global Database                 EC2 Linux
 | **frontend** | `3000` | `/health`<br>`/` | GET<br>GET | Giám sát trạng thái & UI Dashboard | `{"status":"ok","service":"frontend","region":"..."}` |
 | **backend-1** | `8081` | `/health`<br>`/api/v1/info` | GET<br>GET | Dịch vụ Authentication & Metadata | `{"service":"backend-1","role":"Authentication & Demo Service"}` |
 | **backend-2** | `8082` | `/health`<br>`/api/v1/catalog`<br>`/api/v1/info` | GET<br>GET<br>GET | Dịch vụ đọc danh mục sản phẩm (Catalog) | `[{"id":"item-001","name":"Cloud Server Instance","price":49.99}]` |
-| **backend-3** | `8083` | `/health`<br>`/api/v1/info`<br>`/api/v1/orders`<br>`/api/v1/orders` | GET<br>GET<br>GET<br>POST | Dịch vụ quản lý đơn hàng kết nối PostgreSQL | GET: Danh sách đơn hàng gần nhất (hỗ trợ `?marker=...`)<br>POST (201): Tạo đơn hàng & ghi chuỗi sequence |
+| **backend-3** | `8083` | `/health`<br>`/api/v1/info`<br>`/api/v1/orders`<br>`/api/v1/orders/latest?runId=...` | GET<br>GET<br>GET/POST<br>GET | Dịch vụ quản lý đơn hàng kết nối PostgreSQL | Ghi marker DR; đọc marker có sequence lớn nhất theo đúng `runId` |
 | **file-service** | `8084` | `/health`, `/ready`, `/api/v1/files`, `/api/v1/storage/events` | GET/POST/DELETE | File workload trên EC2 + FSx ONTAP | Metadata JSON và SHA-256 nằm cùng filesystem, không lưu Aurora |
 
 ### File Storage API
@@ -74,7 +74,7 @@ Aurora Global Database                 EC2 Linux
 - `CORS_ALLOWED_ORIGINS`: allow-list origin frontend khi dùng ALB riêng.
 - `/ready` kiểm tra storage thật bằng read/write probe; destination SnapMirror read-only trả `503` và `filesystem_read_only`.
 - `/api/v1/files/:id/verify` đọc lại file, tính SHA-256, trả `PASS` hoặc `FAIL`.
-- Storage event được ghi thành `events/<sequence>.json` để đo RPO filesystem độc lập với Aurora.
+- Storage event được ghi thành `events/<runId>/<sequence>.json` để các lần đo RPO filesystem không trộn dữ liệu.
 
 ---
 
@@ -87,7 +87,7 @@ Aurora Global Database                 EC2 Linux
 - `DB_PORT`: Port PostgreSQL (mặc định `5432`).
 - `DB_USER`: Username đăng nhập (mặc định `postgres`).
 - `DB_PASSWORD`: Mật khẩu (truyền qua Kubernetes Secret).
-- `DB_NAME`: Tên cơ sở dữ liệu (mặc định `orders_db`).
+- `DB_NAME`: Tên cơ sở dữ liệu; local fallback là `orders_db`, còn EKS lấy giá trị thật từ Secrets Manager `/app2/database`.
 - `DB_SSL`: `true` nếu yêu cầu kết nối mã hóa SSL/TLS.
 
 ### Bảng Dữ Liệu `orders`:
@@ -106,13 +106,13 @@ CREATE TABLE IF NOT EXISTS orders (
    ```bash
    curl -X POST http://backend-3:8083/api/v1/orders \
      -H "Content-Type: application/json" \
-     -d '{"item_id":"dr-sequence","quantity":1,"marker":"SEQ-000042"}'
+     -d '{"item_id":"dr-sequence","quantity":1,"marker":"DR-run-A-SEQ-000042"}'
    ```
 2. Trong quá trình giả lập thảm họa sập vùng Singapore, Aurora Global Database thực hiện failover sang Tokyo (`ap-northeast-1`).
 3. Sau khi phục hồi, đối soát:
    `last committed marker trước thảm họa` so với `last marker tồn tại sau failover`:
    ```bash
-   curl "http://backend-3:8083/api/v1/orders?marker=SEQ-000042"
+   curl "http://backend-3:8083/api/v1/orders/latest?runId=run-A"
    ```
    Khoảng cách giữa hai giá trị cho phép tính toán chính xác giá trị **RPO (Recovery Point Objective)** tính bằng số lượng bản ghi hoặc thời gian thất thoát dữ liệu thực tế.
 
@@ -150,7 +150,7 @@ git push / pull request
   - Chạy unit tests component (bash ci/test_component.sh <path>)
   - Build Docker image từ root context (docker build -f <path>/Dockerfile .)
   - Quét an ninh container bằng Trivy
-  - [Chỉ push main]: OIDC AssumeRole -> Login ECR -> Push ECR Singapore với tag <SHA> và main
+  - [Chỉ push main]: OIDC AssumeRole -> Login ECR -> Push ECR Singapore chỉ với tag <SHA>
          │
          ▼
 [Job 3: gitops-update (Duy nhất 1 Job - Loại bỏ hoàn toàn Race Condition)]
