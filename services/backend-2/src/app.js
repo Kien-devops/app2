@@ -5,9 +5,9 @@ const SERVICE_NAME = 'backend-2';
 
 const CATALOG_ITEMS = [
   { id: 'item-001', name: 'Cloud Server Instance', category: 'compute', price: 49.99, stock: 100 },
-  { id: 'item-002', name: 'Global Aurora DB Replica', category: 'database', price: 199.99, stock: 50 },
-  { id: 'item-003', name: 'EKS Worker Node Group', category: 'container', price: 89.99, stock: 250 },
-  { id: 'item-004', name: 'Cross-Region Transit Gateway', category: 'networking', price: 120.00, stock: 20 }
+  { id: 'item-002', name: 'Managed Data Plan', category: 'data', price: 199.99, stock: 50 },
+  { id: 'item-003', name: 'Compute Capacity', category: 'compute', price: 89.99, stock: 250 },
+  { id: 'item-004', name: 'Connectivity Plan', category: 'networking', price: 120.00, stock: 20 }
 ];
 
 function getHealthStatus() {

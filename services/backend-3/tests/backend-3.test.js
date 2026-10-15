@@ -98,7 +98,7 @@ test('backend-3 handleRequest returns 200 on /api/v1/info', async () => {
 
   assert.strictEqual(res.statusCode, 200);
   assert.strictEqual(res.json.service, 'backend-3');
-  assert.ok(res.json.role.includes('PostgreSQL'));
+  assert.strictEqual(res.json.role, 'Orders Processing Service');
 });
 
 test('backend-3 health reports database connectivity', async () => {

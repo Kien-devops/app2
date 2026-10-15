@@ -53,7 +53,7 @@ test('frontend handleRequest responds 200 on / with HTML', () => {
   handleRequest(req, res);
   assert.strictEqual(statusCode, 200);
   assert.ok(headers['Content-Type'].includes('text/html'));
-  assert.ok(body.includes('App2 Multi-Region DR Dashboard'));
+  assert.ok(body.includes('Order Management'));
 });
 
 test('frontend /files renders file storage controls and API configuration', () => {
@@ -80,17 +80,19 @@ test('frontend handleRequest responds 200 on /files', () => {
   const res = { writeHead(code) { statusCode = code; }, end(data) { body = data; } };
   handleRequest(req, res);
   assert.equal(statusCode, 200);
-  assert.ok(body.includes('Filesystem disaster recovery'));
+  assert.ok(body.includes('Documents'));
 });
 
-test('frontend handleRequest serves the orders database test page', () => {
+test('frontend handleRequest serves the orders page', () => {
   let statusCode = null;
   let body = '';
   const req = { url: '/orders', headers: { host: 'localhost:3000' } };
   const res = { writeHead(code) { statusCode = code; }, end(data) { body = data; } };
   handleRequest(req, res);
   assert.equal(statusCode, 200);
-  assert.ok(body.includes('Orders / Database Test'));
+  assert.ok(body.includes('<h1>Orders</h1>'));
   assert.ok(body.includes('/api/v1/orders/health'));
-  assert.ok(body.includes('Create DR Marker'));
+  assert.ok(body.includes('Create Order'));
+  assert.ok(!body.includes('DR Marker'));
+  assert.ok(!body.includes('Aurora PostgreSQL'));
 });

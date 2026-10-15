@@ -50,5 +50,5 @@ test('backend-1 handleRequest returns 200 on /api/v1/info', () => {
   assert.strictEqual(statusCode, 200);
   const parsed = JSON.parse(body);
   assert.strictEqual(parsed.service, 'backend-1');
-  assert.strictEqual(parsed.role, 'Authentication & Demo Service');
+  assert.strictEqual(parsed.role, 'System Information Service');
 });

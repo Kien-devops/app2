@@ -61,7 +61,7 @@ function createRequestHandler(db = defaultDb) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         service: SERVICE_NAME,
-        role: 'Orders Processing Service (PostgreSQL / Aurora Global DB)',
+        role: 'Orders Processing Service',
         region: health.region,
         version: '1.0.0'
       }, null, 2));
